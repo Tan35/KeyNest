@@ -715,4 +715,84 @@ watch(() => keyManager.filteredKeys.length, () => {
     transition: box-shadow var(--transition-fast);
 }
 .km-input:focus { outline: none; box-shadow: var(--shadow-ring); }
+
+@media (max-width: 640px) {
+    .key-manager {
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .km-toolbar {
+        align-items: stretch;
+    }
+
+    .km-toolbar-left {
+        width: 100%;
+    }
+
+    .km-toolbar-left .km-btn {
+        flex: 1 1 0;
+        justify-content: center;
+        min-width: 0;
+    }
+
+    .km-count {
+        width: 100%;
+        text-align: right;
+    }
+
+    .km-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .km-search-wrap,
+    .km-filter-group {
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+    }
+
+    .km-filter-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+
+    .km-custom-select,
+    .km-custom-select-sort {
+        min-width: 0;
+        max-width: none;
+    }
+
+    .km-sort-dir {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .km-batch-bar,
+    .km-ie-header,
+    .km-ie-actions,
+    .km-modal-footer {
+        flex-wrap: wrap;
+    }
+
+    .km-ie-actions .km-btn,
+    .km-modal-footer .km-btn {
+        flex: 1 1 0;
+        justify-content: center;
+    }
+
+    .km-key-item {
+        gap: 6px;
+    }
+
+    .km-key-checkbox {
+        margin-top: 12px;
+    }
+
+    .km-form-row {
+        grid-template-columns: 1fr;
+    }
+}
 </style>

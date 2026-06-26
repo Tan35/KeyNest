@@ -285,4 +285,34 @@ async function confirmDelete() {
 }
 .action-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
 .action-btn-delete:hover { color: var(--ds-red); background: var(--bg-tertiary); }
+
+@media (max-width: 640px) {
+    .key-card {
+        padding: 10px;
+        gap: 10px;
+    }
+
+    .key-card-header {
+        gap: 4px;
+    }
+
+    .alias-text {
+        flex-basis: 100%;
+    }
+
+    .key-card-meta {
+        gap: 4px 6px;
+    }
+
+    .key-card-actions {
+        border-left: none;
+        padding-left: 0;
+        justify-content: flex-start;
+        padding-top: 2px;
+    }
+
+    .action-btn {
+        padding: 4px;
+    }
+}
 </style>
