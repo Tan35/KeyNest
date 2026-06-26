@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, reactive } from 'vue';
+import { ref, onMounted, computed, reactive, watch } from 'vue';
 import { useKeyManagerStore } from '@/stores/keyManager';
 import { useUiStore } from '@/stores/ui';
 import { useConfigStore } from '@/stores/config';
@@ -22,6 +22,7 @@ const showBalanceHistory = ref(false);
 const newTag          = ref('');
 const testingModel    = ref('');
 const modelSpeedResults = reactive({});
+const selectedModel   = ref('');
 
 const keyRecord = computed(() => keyManager.keys.find(k => k.id === keyId.value) || null);
 
@@ -51,6 +52,12 @@ const filteredModels = computed(() => {
     return keyRecord.value.models.filter(m => m.toLowerCase().includes(term));
 });
 
+const modelOptions = computed(() => {
+    if (!keyRecord.value) return [];
+    const current = keyRecord.value.model ? [keyRecord.value.model] : [];
+    return [...new Set([...current, ...keyRecord.value.models])];
+});
+
 function formatDate(iso) {
     if (!iso) return '-';
     const lang = currentLang.value;
@@ -67,9 +74,17 @@ onMounted(() => {
     if (keyRecord.value) {
         editAlias.value    = keyRecord.value.alias;
         editProvider.value = keyRecord.value.provider;
+        selectedModel.value = keyRecord.value.model || '';
         keyManager.loadBalanceHistory(keyId.value);
     }
 });
+
+watch(
+    () => keyRecord.value?.model,
+    (model) => {
+        selectedModel.value = model || '';
+    }
+);
 
 async function saveEdit() {
     const updates = {
@@ -102,7 +117,7 @@ async function runConnectionTest(modelOverride) {
     const providerConfig = {
         provider: keyRecord.value.provider,
         baseUrl:  keyRecord.value.baseUrl || configStore.providers[keyRecord.value.provider]?.defaultBase || '',
-        model:    modelOverride || keyRecord.value.model || configStore.providers[keyRecord.value.provider]?.defaultModel || '',
+        model:    modelOverride || selectedModel.value || keyRecord.value.model || configStore.providers[keyRecord.value.provider]?.defaultModel || '',
         enableStream: false,
         region: configStore.currentRegion,
         validationPrompt: configStore.validationPrompt,
@@ -138,7 +153,7 @@ async function testConnection() {
     if (!keyRecord.value || isTesting.value) return;
     isTesting.value = true;
     try {
-        const { result } = await runConnectionTest();
+        const { result } = await runConnectionTest(selectedModel.value);
         await keyManager.updateKeyFromCheck(keyRecord.value.token, result);
         if (result.isValid) {
             const balMsg = result.balance !== undefined && result.balance !== -1
@@ -186,6 +201,14 @@ function getModelSpeedText(model) {
 function getModelSpeedClass(model) {
     const state = modelSpeedResults[model];
     return state ? `is-${state.status}` : '';
+}
+
+async function handleModelChange(event) {
+    const model = event.target.value;
+    if (!keyRecord.value || !model || model === keyRecord.value.model) return;
+    selectedModel.value = model;
+    await keyManager.updateKey(keyId.value, { model });
+    uiStore.showToast(t('toastModelSelected', { model }), 'info', 1500);
 }
 
 async function handleFetchModels() {
@@ -295,9 +318,17 @@ async function removeTag(tag) {
                 </div>
 
                 <!-- Model -->
-                <div class="detail-field" v-if="keyRecord.model">
+                <div class="detail-field" v-if="keyRecord.model || keyRecord.models.length > 0">
                     <span class="field-label">{{ t('kdFieldModel') }}</span>
-                    <span class="field-value mono">{{ keyRecord.model }}</span>
+                    <select
+                        v-if="modelOptions.length > 0"
+                        v-model="selectedModel"
+                        class="field-select mono-select"
+                        @change="handleModelChange"
+                    >
+                        <option v-for="model in modelOptions" :key="model" :value="model">{{ model }}</option>
+                    </select>
+                    <span v-else class="field-value mono">{{ keyRecord.model }}</span>
                 </div>
 
                 <!-- Base URL -->
