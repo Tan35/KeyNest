@@ -3,7 +3,6 @@ import { ref, onMounted, computed, watch } from 'vue';
 import { useKeyManagerStore } from '@/stores/keyManager';
 import { useUiStore } from '@/stores/ui';
 import { useConfigStore } from '@/stores/config';
-import { useCheckerStore } from '@/stores/checker';
 import KeyCard from './KeyCard.vue';
 import CustomSelect from './CustomSelect.vue';
 import { t, currentLang } from '@/i18n';
@@ -11,12 +10,12 @@ import { t, currentLang } from '@/i18n';
 const keyManager   = useKeyManagerStore();
 const uiStore      = useUiStore();
 const configStore  = useConfigStore();
-const checkerStore = useCheckerStore();
 
 const addModalOpen   = ref(false);
 const newKeyText     = ref('');
 const newKeyAlias    = ref('');
 const newKeyProvider = ref('openai');
+const importProvider = ref('openai');
 const newKeyBaseUrl  = ref('');
 const newKeyModel    = ref('');
 const selectedIds    = ref(new Set());
@@ -80,31 +79,50 @@ async function handleAddKey() {
     if (!token) { uiStore.showToast(t('toastPleaseEnterKey'), 'warning'); return; }
     const existing = keyManager.keys.find(k => k.token === token);
     if (existing) { uiStore.showToast(t('toastKeyExists'), 'warning'); return; }
-    await keyManager.addKey({
+    const added = await keyManager.addKey({
         token,
         alias:    newKeyAlias.value.trim(),
         provider: newKeyProvider.value,
         baseUrl:  newKeyBaseUrl.value.trim() || configStore.providers[newKeyProvider.value]?.defaultBase || '',
         model:    newKeyModel.value.trim()   || configStore.providers[newKeyProvider.value]?.defaultModel || '',
     });
+    if (!added) { uiStore.showToast(t('toastKeyExists'), 'warning'); return; }
     newKeyText.value = newKeyAlias.value = newKeyBaseUrl.value = newKeyModel.value = '';
     addModalOpen.value = false;
     uiStore.showToast(t('toastKeyAdded'), 'success');
 }
 
 async function handleBatchImport() {
-    const lines = importText.value.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length === 0) { uiStore.showToast(t('toastNoValidKey'), 'warning'); return; }
-    const records = lines.map(token => ({
-        token,
-        provider: newKeyProvider.value,
-        baseUrl:  configStore.providers[newKeyProvider.value]?.defaultBase || '',
-        model:    configStore.providers[newKeyProvider.value]?.defaultModel || '',
-    }));
-    const count = await keyManager.addKeysBatch(records);
-    importText.value = '';
-    showImportExport.value = false;
-    uiStore.showToast(t('toastImportedCount', { count }), 'success');
+    const raw = importText.value.trim();
+    if (!raw) { uiStore.showToast(t('toastNoValidKey'), 'warning'); return; }
+
+    try {
+        let count = 0;
+        if (raw.startsWith('[') || raw.startsWith('{')) {
+            count = await keyManager.importKeys(raw);
+        } else {
+            const lines = raw.split('\n').map(l => l.trim()).filter(l => l);
+            if (lines.length === 0) { uiStore.showToast(t('toastNoValidKey'), 'warning'); return; }
+            const records = lines.map(token => ({
+                token,
+                provider: importProvider.value,
+                baseUrl:  configStore.providers[importProvider.value]?.defaultBase || '',
+                model:    configStore.providers[importProvider.value]?.defaultModel || '',
+            }));
+            count = await keyManager.addKeysBatch(records);
+        }
+
+        if (count === 0) {
+            uiStore.showToast(t('toastNoNewKeys'), 'warning');
+            return;
+        }
+
+        importText.value = '';
+        showImportExport.value = false;
+        uiStore.showToast(t('toastImportedCount', { count }), 'success');
+    } catch (err) {
+        uiStore.showToast(t('toastImportFailed', { msg: err.message || '' }), 'error');
+    }
 }
 
 function toggleSelect(id) {
@@ -243,6 +261,14 @@ watch(() => keyManager.filteredKeys.length, () => {
             <div class="km-ie-header">
                 <span class="km-ie-title">{{ t('ieTitle') }}</span>
                 <button @click="showImportExport = false" class="km-btn km-btn-sm">{{ t('btnClose') }}</button>
+            </div>
+            <div class="km-form-group km-ie-provider">
+                <label>{{ t('labelPlatform') }}</label>
+                <CustomSelect
+                    v-model="importProvider"
+                    :options="providerOptions"
+                    :placeholder="t('placeholderSelectPlatform')"
+                />
             </div>
             <textarea
                 v-model="importText"

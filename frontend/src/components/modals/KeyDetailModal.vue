@@ -72,10 +72,26 @@ onMounted(() => {
 });
 
 async function saveEdit() {
-    await keyManager.updateKey(keyId.value, {
+    const updates = {
         alias:    editAlias.value.trim(),
         provider: editProvider.value,
-    });
+    };
+
+    if (keyRecord.value && editProvider.value !== keyRecord.value.provider) {
+        const nextProvider = configStore.providers[editProvider.value] || {};
+        Object.assign(updates, {
+            baseUrl: nextProvider.defaultBase || '',
+            model: nextProvider.defaultModel || '',
+            status: 'unknown',
+            balance: null,
+            currency: null,
+            lastChecked: null,
+            models: [],
+            modelsUpdatedAt: null,
+        });
+    }
+
+    await keyManager.updateKey(keyId.value, updates);
     isEditing.value = false;
     uiStore.showToast(t('toastKdSaved'), 'success');
 }

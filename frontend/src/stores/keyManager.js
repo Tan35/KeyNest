@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed, reactive } from 'vue';
+import { ref, computed } from 'vue';
 import * as db from '@/db/keyStore';
 
 /**
@@ -129,6 +129,7 @@ export const useKeyManagerStore = defineStore('keyManager', () => {
      */
     async function addKey(record) {
         const added = await db.addKey(record);
+        if (!added) return null;
         keys.value = [...keys.value, added];
         return added;
     }
@@ -188,8 +189,8 @@ export const useKeyManagerStore = defineStore('keyManager', () => {
      * @param {object} result - 检测结果。
      */
     async function updateKeyFromCheck(token, result) {
-        const keyRecord = keys.value.find(k => k.token === token);
-        if (!keyRecord) return;
+        const keyRecords = keys.value.filter(k => k.token === token);
+        if (keyRecords.length === 0) return;
 
         const updates = {
             status: result.isValid ? 'valid' : (result.errorCategory === 'rate_limit' ? 'rateLimit' : 'invalid'),
@@ -200,12 +201,14 @@ export const useKeyManagerStore = defineStore('keyManager', () => {
         if (result.isValid && result.balance !== undefined && result.balance !== -1) {
             updates.balance = result.balance;
             updates.currency = result.currency || 'USD';
-
-            // 创建余额快照
-            await db.addBalanceSnapshot(keyRecord.id, result.balance, result.currency || 'USD');
         }
 
-        await updateKey(keyRecord.id, updates);
+        for (const keyRecord of keyRecords) {
+            if (updates.balance !== undefined) {
+                await db.addBalanceSnapshot(keyRecord.id, result.balance, result.currency || 'USD');
+            }
+            await updateKey(keyRecord.id, updates);
+        }
     }
 
     /**

@@ -1,7 +1,7 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'api-key-manager';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -12,13 +12,19 @@ let dbPromise = null;
 function getDB() {
     if (!dbPromise) {
         dbPromise = openDB(DB_NAME, DB_VERSION, {
-            upgrade(db) {
+            upgrade(db, _oldVersion, _newVersion, transaction) {
                 // keys store: 存储 API Key 信息
                 if (!db.objectStoreNames.contains('keys')) {
                     const keyStore = db.createObjectStore('keys', { keyPath: 'id' });
                     keyStore.createIndex('provider', 'provider', { unique: false });
                     keyStore.createIndex('status', 'status', { unique: false });
                     keyStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    keyStore.createIndex('token', 'token', { unique: false });
+                } else {
+                    const keyStore = transaction.objectStore('keys');
+                    if (!keyStore.indexNames.contains('token')) {
+                        keyStore.createIndex('token', 'token', { unique: false });
+                    }
                 }
 
                 // balanceSnapshots store: 余额历史快照
@@ -33,6 +39,35 @@ function getDB() {
     return dbPromise;
 }
 
+function normalizeToken(token) {
+    return String(token || '').trim();
+}
+
+function buildKeyRecord(record, now, id = crypto.randomUUID()) {
+    return {
+        id,
+        token: normalizeToken(record.token),
+        alias: record.alias || '',
+        provider: record.provider || 'openai',
+        baseUrl: record.baseUrl || '',
+        model: record.model || '',
+        status: record.status || 'unknown',
+        balance: record.balance ?? null,
+        currency: record.currency ?? null,
+        lastChecked: record.lastChecked || null,
+        models: Array.isArray(record.models) ? record.models : [],
+        modelsUpdatedAt: record.modelsUpdatedAt || null,
+        tags: Array.isArray(record.tags) ? record.tags : [],
+        createdAt: record.createdAt || now,
+        updatedAt: record.updatedAt || now,
+    };
+}
+
+async function getExistingTokenSet(db) {
+    const keys = await db.getAll('keys');
+    return new Set(keys.map(k => normalizeToken(k.token)).filter(Boolean));
+}
+
 // --- Key CRUD 操作 ---
 
 /**
@@ -42,25 +77,14 @@ function getDB() {
  */
 export async function addKey(record) {
     const db = await getDB();
+    const token = normalizeToken(record.token);
+    if (!token) return null;
+    const existing = await getKeyByToken(token);
+    if (existing) return null;
+
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const fullRecord = {
-        id,
-        token: record.token,
-        alias: record.alias || '',
-        provider: record.provider || 'openai',
-        baseUrl: record.baseUrl || '',
-        model: record.model || '',
-        status: record.status || 'unknown',
-        balance: record.balance ?? null,
-        currency: record.currency ?? null,
-        lastChecked: record.lastChecked || null,
-        models: record.models || [],
-        modelsUpdatedAt: record.modelsUpdatedAt || null,
-        tags: record.tags || [],
-        createdAt: now,
-        updatedAt: now,
-    };
+    const fullRecord = buildKeyRecord({ ...record, token }, now, id);
     await db.add('keys', fullRecord);
     return fullRecord;
 }
@@ -73,23 +97,18 @@ export async function addKey(record) {
 export async function addKeys(records) {
     const db = await getDB();
     const now = new Date().toISOString();
-    const fullRecords = records.map(record => ({
-        id: crypto.randomUUID(),
-        token: record.token,
-        alias: record.alias || '',
-        provider: record.provider || 'openai',
-        baseUrl: record.baseUrl || '',
-        model: record.model || '',
-        status: record.status || 'unknown',
-        balance: record.balance ?? null,
-        currency: record.currency ?? null,
-        lastChecked: record.lastChecked || null,
-        models: record.models || [],
-        modelsUpdatedAt: record.modelsUpdatedAt || null,
-        tags: record.tags || [],
-        createdAt: now,
-        updatedAt: now,
-    }));
+    const existingTokens = await getExistingTokenSet(db);
+    const seenTokens = new Set();
+    const fullRecords = records
+        .map(record => buildKeyRecord(record, now, record.id || crypto.randomUUID()))
+        .filter(record => {
+            if (!record.token || existingTokens.has(record.token) || seenTokens.has(record.token)) {
+                return false;
+            }
+            seenTokens.add(record.token);
+            return true;
+        });
+
     const tx = db.transaction('keys', 'readwrite');
     for (const record of fullRecords) {
         tx.store.add(record);
@@ -164,8 +183,17 @@ export async function getKeyById(id) {
  */
 export async function getKeyByToken(token) {
     const db = await getDB();
-    const allKeys = await db.getAll('keys');
-    return allKeys.find(k => k.token === token);
+    const normalized = normalizeToken(token);
+    if (!normalized) return undefined;
+    const matches = await db.getAllFromIndex('keys', 'token', normalized);
+    return matches[0];
+}
+
+export async function getKeysByToken(token) {
+    const db = await getDB();
+    const normalized = normalizeToken(token);
+    if (!normalized) return [];
+    return db.getAllFromIndex('keys', 'token', normalized);
 }
 
 // --- 余额快照操作 ---
@@ -218,8 +246,12 @@ export async function getLatestSnapshot(keyId) {
  * @returns {Promise<string>} - JSON 字符串。
  */
 export async function exportAllKeys() {
-    const keys = await getAllKeys();
-    return JSON.stringify(keys, null, 2);
+    const db = await getDB();
+    const [keys, balanceSnapshots] = await Promise.all([
+        db.getAll('keys'),
+        db.getAll('balanceSnapshots'),
+    ]);
+    return JSON.stringify({ version: 2, keys, balanceSnapshots }, null, 2);
 }
 
 /**
@@ -229,7 +261,42 @@ export async function exportAllKeys() {
  */
 export async function importKeys(jsonStr) {
     const data = JSON.parse(jsonStr);
-    const records = Array.isArray(data) ? data : [data];
-    const imported = await addKeys(records);
-    return imported.length;
+    const payload = Array.isArray(data)
+        ? { keys: data, balanceSnapshots: [] }
+        : { keys: Array.isArray(data?.keys) ? data.keys : (data ? [data] : []), balanceSnapshots: Array.isArray(data?.balanceSnapshots) ? data.balanceSnapshots : [] };
+
+    const db = await getDB();
+    const now = new Date().toISOString();
+    const existingTokens = await getExistingTokenSet(db);
+    const seenTokens = new Set();
+    const idMap = new Map();
+    const importedKeys = [];
+
+    for (const rawRecord of payload.keys) {
+        const record = buildKeyRecord(rawRecord, now, rawRecord?.id || crypto.randomUUID());
+        if (!record.token || existingTokens.has(record.token) || seenTokens.has(record.token)) {
+            continue;
+        }
+        seenTokens.add(record.token);
+        idMap.set(rawRecord?.id, record.id);
+        importedKeys.push(record);
+    }
+
+    const tx = db.transaction(['keys', 'balanceSnapshots'], 'readwrite');
+    for (const record of importedKeys) {
+        tx.objectStore('keys').add(record);
+    }
+    for (const snapshot of payload.balanceSnapshots) {
+        const mappedKeyId = idMap.get(snapshot?.keyId);
+        if (!mappedKeyId) continue;
+        tx.objectStore('balanceSnapshots').add({
+            id: snapshot?.id || crypto.randomUUID(),
+            keyId: mappedKeyId,
+            balance: snapshot.balance,
+            currency: snapshot.currency || 'USD',
+            timestamp: snapshot.timestamp || now,
+        });
+    }
+    await tx.done;
+    return importedKeys.length;
 }

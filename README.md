@@ -111,7 +111,7 @@ The app has two tabs: **Checker** and **Key**.
 - searched by token, alias, provider, or tag
 - filtered by provider and status, sorted by any column
 - tested individually without running a whole batch
-- exported to JSON and re-imported on another device
+- exported to JSON together with balance history and re-imported on another device
 
 When a Checker run touches a key that's already in the vault, its status and balance are updated automatically, and a balance snapshot is appended to the history.
 
