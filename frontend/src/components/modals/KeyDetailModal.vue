@@ -149,7 +149,7 @@ async function testModelSpeed(model) {
         if (!result.isValid) {
             throw new Error(result.message || t('statusInvalid'));
         }
-        modelSpeedResults[model] = { status: 'success', elapsedMs };
+        modelSpeedResults[model] = { status: 'success', elapsedMs, workerElapsedMs: result.workerElapsedMs ?? null };
     } catch (err) {
         modelSpeedResults[model] = { status: 'error', message: err.message || t('statusInvalid') };
     } finally {
@@ -161,7 +161,12 @@ function getModelSpeedText(model) {
     const state = modelSpeedResults[model];
     if (!state) return '';
     if (state.status === 'testing') return t('btnSpeedTesting');
-    if (state.status === 'success') return t('kdSpeedMs', { ms: state.elapsedMs });
+    if (state.status === 'success') {
+        if (state.workerElapsedMs !== null && state.workerElapsedMs !== undefined) {
+            return t('kdSpeedBothMs', { total: state.elapsedMs, worker: state.workerElapsedMs });
+        }
+        return t('kdSpeedMs', { ms: state.elapsedMs });
+    }
     return t('kdSpeedFailed');
 }
 

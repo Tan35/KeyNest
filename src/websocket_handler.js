@@ -127,8 +127,9 @@ class TaskManager {
         if (this.isStopped) return;
         try {
             // 从 item 对象中正确地取出 token 字符串进行检测
+            const startedAt = Date.now();
             const result = await checker.checkToken(item.token, this.providerMeta, this.providerConfig, this.env);
-            this.callbacks.onResult({ ...result, order: item.order });
+            this.callbacks.onResult({ ...result, workerElapsedMs: Date.now() - startedAt, order: item.order });
         } catch (e) {
             this.callbacks.onResult({ token: item.token, message: e.message, error: true, order: item.order });
         }
