@@ -64,16 +64,11 @@
             
             <div v-else class="empty-state">
                 <svg class="empty-icon" width="52" height="52" viewBox="0 0 52 52" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <!-- 外圆环 -->
-                    <circle cx="18" cy="18" r="10"/>
-                    <!-- 内圆孔 -->
-                    <circle cx="18" cy="18" r="4.5"/>
-                    <!-- 钥匙柄 -->
-                    <line x1="25.4" y1="25.4" x2="44" y2="44"/>
-                    <!-- 钥齿上 -->
-                    <polyline points="37,37 37,41 41,41"/>
-                    <!-- 钥齿下 -->
-                    <polyline points="41,41 41,45 45,45"/>
+                    <rect x="9" y="10" width="30" height="24" rx="6"/>
+                    <path d="M16 18h16"/>
+                    <path d="M16 24h10"/>
+                    <path d="M13 40l6-6"/>
+                    <circle cx="28.5" cy="36.5" r="7.5"/>
                 </svg>
                 <p>{{ t('emptyState') }}</p>
             </div>
