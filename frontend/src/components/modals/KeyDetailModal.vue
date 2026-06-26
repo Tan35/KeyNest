@@ -258,13 +258,6 @@ async function removeTag(tag) {
 
             <!-- ── Actions ── -->
             <div class="detail-actions">
-                <template v-if="!isEditing">
-                    <button @click="isEditing = true" class="detail-btn">{{ t('btnEdit') }}</button>
-                </template>
-                <template v-else>
-                    <button @click="saveEdit" class="detail-btn primary">{{ t('btnSave') }}</button>
-                    <button @click="isEditing = false" class="detail-btn">{{ t('btnCancelEdit') }}</button>
-                </template>
                 <button @click="testConnection" :disabled="isTesting" class="detail-btn primary">
                     <svg v-if="isTesting" class="spin-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.75">
                         <path d="M6 1a5 5 0 100 10A5 5 0 006 1z" opacity=".25"/>
@@ -272,10 +265,17 @@ async function removeTag(tag) {
                     </svg>
                     {{ isTesting ? t('btnTesting') : t('btnTestConn') }}
                 </button>
+                <button @click="handleDelete" class="detail-btn danger">{{ t('btnDelete') }}</button>
+                <template v-if="!isEditing">
+                    <button @click="isEditing = true" class="detail-btn">{{ t('btnEdit') }}</button>
+                </template>
+                <template v-else>
+                    <button @click="saveEdit" class="detail-btn primary">{{ t('btnSave') }}</button>
+                    <button @click="isEditing = false" class="detail-btn">{{ t('btnCancelEdit') }}</button>
+                </template>
                 <button @click="handleFetchModels" :disabled="isLoadingModels" class="detail-btn">
                     {{ isLoadingModels ? t('btnFetchingModels') : t('btnFetchModels') }}
                 </button>
-                <button @click="handleDelete" class="detail-btn danger">{{ t('btnDelete') }}</button>
             </div>
 
             <!-- ── Tags ── -->
