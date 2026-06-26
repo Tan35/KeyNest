@@ -160,7 +160,7 @@ async function testModelSpeed(model) {
 function getModelSpeedText(model) {
     const state = modelSpeedResults[model];
     if (!state) return '';
-    if (state.status === 'testing') return t('btnSpeedTesting');
+    if (state.status === 'testing') return '';
     if (state.status === 'success') {
         return t('kdSpeedMs', { ms: state.workerElapsedMs ?? state.elapsedMs });
     }
@@ -380,7 +380,8 @@ async function removeTag(tag) {
                             :class="getModelSpeedClass(model)"
                             :title="modelSpeedResults[model]?.message || ''"
                         >
-                            {{ getModelSpeedText(model) }}
+                            <span v-if="modelSpeedResults[model]?.status === 'testing'" class="model-speed-placeholder" aria-hidden="true"></span>
+                            <template v-else>{{ getModelSpeedText(model) }}</template>
                         </span>
                     </div>
                 </div>
@@ -722,6 +723,19 @@ async function removeTag(tag) {
     color: var(--ds-red);
 }
 .model-speed-result.is-testing {
-    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+}
+.model-speed-placeholder {
+    width: 42px;
+    height: 10px;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: model-speed-pulse 1s ease-in-out infinite;
+}
+@keyframes model-speed-pulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
 }
 </style>
