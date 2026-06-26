@@ -5,6 +5,7 @@ import { useUiStore } from '@/stores/ui';
 import { useConfigStore } from '@/stores/config';
 import { fetchModels } from '@/api';
 import { t, currentLang } from '@/i18n';
+import CustomSelect from '@/components/CustomSelect.vue';
 
 const keyManager   = useKeyManagerStore();
 const uiStore      = useUiStore();
@@ -57,6 +58,8 @@ const modelOptions = computed(() => {
     const current = keyRecord.value.model ? [keyRecord.value.model] : [];
     return [...new Set([...current, ...keyRecord.value.models])];
 });
+
+const modelSelectOptions = computed(() => modelOptions.value.map(model => ({ key: model, label: model })));
 
 function formatDate(iso) {
     if (!iso) return '-';
@@ -203,8 +206,7 @@ function getModelSpeedClass(model) {
     return state ? `is-${state.status}` : '';
 }
 
-async function handleModelChange(event) {
-    const model = event.target.value;
+async function handleModelChange(model) {
     if (!keyRecord.value || !model || model === keyRecord.value.model) return;
     selectedModel.value = model;
     await keyManager.updateKey(keyId.value, { model });
@@ -320,14 +322,14 @@ async function removeTag(tag) {
                 <!-- Model -->
                 <div class="detail-field" v-if="keyRecord.model || keyRecord.models.length > 0">
                     <span class="field-label">{{ t('kdFieldModel') }}</span>
-                    <select
+                    <CustomSelect
                         v-if="modelOptions.length > 0"
                         v-model="selectedModel"
-                        class="field-select mono-select"
-                        @change="handleModelChange"
-                    >
-                        <option v-for="model in modelOptions" :key="model" :value="model">{{ model }}</option>
-                    </select>
+                        :options="modelSelectOptions"
+                        :placeholder="t('placeholderModel2')"
+                        class="detail-model-select"
+                        @update:modelValue="handleModelChange"
+                    />
                     <span v-else class="field-value mono">{{ keyRecord.model }}</span>
                 </div>
 
@@ -594,6 +596,13 @@ async function removeTag(tag) {
     cursor: pointer;
 }
 .field-select:focus { outline: none; }
+.detail-model-select :deep(.cs-trigger),
+.detail-model-select :deep(.cs-input),
+.detail-model-select :deep(.cs-value),
+.detail-model-select :deep(.cs-option) {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
 
 /* ── Actions ── */
 .detail-actions {
