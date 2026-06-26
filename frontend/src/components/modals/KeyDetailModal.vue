@@ -162,10 +162,7 @@ function getModelSpeedText(model) {
     if (!state) return '';
     if (state.status === 'testing') return t('btnSpeedTesting');
     if (state.status === 'success') {
-        if (state.workerElapsedMs !== null && state.workerElapsedMs !== undefined) {
-            return t('kdSpeedBothMs', { total: state.elapsedMs, worker: state.workerElapsedMs });
-        }
-        return t('kdSpeedMs', { ms: state.elapsedMs });
+        return t('kdSpeedMs', { ms: state.workerElapsedMs ?? state.elapsedMs });
     }
     return t('kdSpeedFailed');
 }
@@ -672,6 +669,7 @@ async function removeTag(tag) {
     gap: 2px;
     max-height: 200px;
     overflow-y: auto;
+    padding-right: 8px;
 }
 .model-row {
     display: grid;
