@@ -1,15 +1,13 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, reactive } from 'vue';
 import { useKeyManagerStore } from '@/stores/keyManager';
 import { useUiStore } from '@/stores/ui';
-import { useCheckerStore } from '@/stores/checker';
 import { useConfigStore } from '@/stores/config';
 import { fetchModels } from '@/api';
 import { t, currentLang } from '@/i18n';
 
 const keyManager   = useKeyManagerStore();
 const uiStore      = useUiStore();
-const checkerStore = useCheckerStore();
 const configStore  = useConfigStore();
 
 const keyId = computed(() => uiStore.modalData?.keyId || null);
@@ -22,6 +20,8 @@ const isLoadingModels = ref(false);
 const modelSearch     = ref('');
 const showBalanceHistory = ref(false);
 const newTag          = ref('');
+const testingModel    = ref('');
+const modelSpeedResults = reactive({});
 
 const keyRecord = computed(() => keyManager.keys.find(k => k.id === keyId.value) || null);
 
@@ -80,37 +80,49 @@ async function saveEdit() {
     uiStore.showToast(t('toastKdSaved'), 'success');
 }
 
+async function runConnectionTest(modelOverride) {
+    if (!keyRecord.value) return null;
+
+    const providerConfig = {
+        provider: keyRecord.value.provider,
+        baseUrl:  keyRecord.value.baseUrl || configStore.providers[keyRecord.value.provider]?.defaultBase || '',
+        model:    modelOverride || keyRecord.value.model || configStore.providers[keyRecord.value.provider]?.defaultModel || '',
+        enableStream: false,
+        region: configStore.currentRegion,
+        validationPrompt: configStore.validationPrompt,
+        validationMaxTokens: configStore.validationMaxTokens,
+        validationMaxOutputTokens: configStore.validationMaxOutputTokens,
+    };
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const startedAt = performance.now();
+    const result = await new Promise((resolve, reject) => {
+        const ws = new WebSocket(`${protocol}//${host}/check`);
+        const timeout = setTimeout(() => { ws.close(); reject(new Error(t('kdTestTimeout'))); }, 30000);
+        ws.onopen = () => ws.send(JSON.stringify({
+            command: 'start',
+            data: { tokens: [{ token: keyRecord.value.token, order: 0 }], providerConfig, concurrency: 1 },
+        }));
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'result') { clearTimeout(timeout); ws.close(); resolve(msg.data); }
+            else if (msg.type === 'error') { clearTimeout(timeout); ws.close(); reject(new Error(msg.message)); }
+        };
+        ws.onerror = () => { clearTimeout(timeout); reject(new Error(t('kdWsConnFailed'))); };
+        ws.onclose = () => { clearTimeout(timeout); };
+    });
+
+    return {
+        result,
+        elapsedMs: Math.round(performance.now() - startedAt),
+    };
+}
+
 async function testConnection() {
     if (!keyRecord.value || isTesting.value) return;
     isTesting.value = true;
     try {
-        const providerConfig = {
-            provider: keyRecord.value.provider,
-            baseUrl:  keyRecord.value.baseUrl || configStore.providers[keyRecord.value.provider]?.defaultBase || '',
-            model:    keyRecord.value.model   || configStore.providers[keyRecord.value.provider]?.defaultModel || '',
-            enableStream: false,
-            region: configStore.currentRegion,
-            validationPrompt: configStore.validationPrompt,
-            validationMaxTokens: configStore.validationMaxTokens,
-            validationMaxOutputTokens: configStore.validationMaxOutputTokens,
-        };
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const result = await new Promise((resolve, reject) => {
-            const ws = new WebSocket(`${protocol}//${host}/check`);
-            const timeout = setTimeout(() => { ws.close(); reject(new Error(t('kdTestTimeout'))); }, 30000);
-            ws.onopen = () => ws.send(JSON.stringify({
-                command: 'start',
-                data: { tokens: [{ token: keyRecord.value.token, order: 0 }], providerConfig, concurrency: 1 },
-            }));
-            ws.onmessage = (event) => {
-                const msg = JSON.parse(event.data);
-                if (msg.type === 'result') { clearTimeout(timeout); ws.close(); resolve(msg.data); }
-                else if (msg.type === 'error') { clearTimeout(timeout); ws.close(); reject(new Error(msg.message)); }
-            };
-            ws.onerror = () => { clearTimeout(timeout); reject(new Error(t('kdWsConnFailed'))); };
-            ws.onclose = () => { clearTimeout(timeout); };
-        });
+        const { result } = await runConnectionTest();
         await keyManager.updateKeyFromCheck(keyRecord.value.token, result);
         if (result.isValid) {
             const balMsg = result.balance !== undefined && result.balance !== -1
@@ -125,6 +137,37 @@ async function testConnection() {
             uiStore.showToast(t('toastKdTestBackendDown'), 'error', 5000);
         else uiStore.showToast(t('toastKdTestFailed', { msg }), 'error');
     } finally { isTesting.value = false; }
+}
+
+async function testModelSpeed(model) {
+    if (!keyRecord.value || testingModel.value) return;
+    testingModel.value = model;
+    modelSpeedResults[model] = { status: 'testing' };
+
+    try {
+        const { result, elapsedMs } = await runConnectionTest(model);
+        if (!result.isValid) {
+            throw new Error(result.message || t('statusInvalid'));
+        }
+        modelSpeedResults[model] = { status: 'success', elapsedMs };
+    } catch (err) {
+        modelSpeedResults[model] = { status: 'error', message: err.message || t('statusInvalid') };
+    } finally {
+        testingModel.value = '';
+    }
+}
+
+function getModelSpeedText(model) {
+    const state = modelSpeedResults[model];
+    if (!state) return '';
+    if (state.status === 'testing') return t('btnSpeedTesting');
+    if (state.status === 'success') return t('kdSpeedMs', { ms: state.elapsedMs });
+    return t('kdSpeedFailed');
+}
+
+function getModelSpeedClass(model) {
+    const state = modelSpeedResults[model];
+    return state ? `is-${state.status}` : '';
 }
 
 async function handleFetchModels() {
@@ -320,7 +363,24 @@ async function removeTag(tag) {
                 <h4 class="section-title">{{ t('sectionModels') }} ({{ keyRecord.models.length }})</h4>
                 <input v-model="modelSearch" class="field-input" :placeholder="t('placeholderSearchModel')" style="margin-bottom:8px;" />
                 <div class="model-list">
-                    <div v-for="model in filteredModels" :key="model" class="model-item">{{ model }}</div>
+                    <div v-for="model in filteredModels" :key="model" class="model-row">
+                        <div class="model-item">{{ model }}</div>
+                        <button
+                            class="model-speed-btn"
+                            :disabled="!!testingModel"
+                            @click="testModelSpeed(model)"
+                        >
+                            {{ testingModel === model ? t('btnSpeedTesting') : t('btnSpeedTest') }}
+                        </button>
+                        <span
+                            v-if="modelSpeedResults[model]"
+                            class="model-speed-result"
+                            :class="getModelSpeedClass(model)"
+                            :title="modelSpeedResults[model]?.message || ''"
+                        >
+                            {{ getModelSpeedText(model) }}
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -608,6 +668,12 @@ async function removeTag(tag) {
     max-height: 200px;
     overflow-y: auto;
 }
+.model-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+}
 .model-item {
     font-family: var(--font-mono);
     font-size: 12px;
@@ -615,6 +681,44 @@ async function removeTag(tag) {
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
     transition: background var(--transition-fast);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .model-item:hover { background: var(--bg-secondary); }
+.model-speed-btn {
+    height: 24px;
+    padding: 0 8px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.model-speed-btn:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+.model-speed-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.model-speed-result {
+    font-size: 11px;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+}
+.model-speed-result.is-success {
+    color: #0a7c42;
+    font-variant-numeric: tabular-nums;
+}
+.model-speed-result.is-error {
+    color: var(--ds-red);
+}
+.model-speed-result.is-testing {
+    color: var(--text-secondary);
+}
 </style>
