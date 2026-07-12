@@ -19,6 +19,7 @@ import ToastContainer from './components/ToastContainer.vue';
 import ModalContainer from './components/ModalContainer.vue';
 import KeyManager from './components/KeyManager.vue';
 import AuthPage from './components/AuthPage.vue';
+import UserAvatar from './components/UserAvatar.vue';
 
 /**
  * @description 结果标签页的配置数组。
@@ -34,6 +35,11 @@ const scrollPosition = ref(0);
 
 /** 语言切换下拉菜单开关 */
 const langMenuOpen = ref(false);
+/** 用户头像菜单（Logout） */
+const userMenuOpen = ref(false);
+
+/** 头像 seed：用户 id */
+const avatarSeed = computed(() => authStore.user?.id || '');
 
 
 
@@ -95,6 +101,7 @@ watch(() => uiStore.isModalActive, (isActive) => {
 const handleEscKey = (e) => {
     if (e.key === 'Escape') {
         if (langMenuOpen.value) { langMenuOpen.value = false; return; }
+        if (userMenuOpen.value) { userMenuOpen.value = false; return; }
         if (!uiStore.activeModal) return;
         if (uiStore.activeModal === 'modelSelector' && uiStore.modelSearch) {
             uiStore.modelSearch = '';
@@ -105,13 +112,26 @@ const handleEscKey = (e) => {
 };
 
 /**
- * @description 点击外部关闭语言菜单。
+ * @description 点击外部关闭语言 / 用户菜单。
  */
 const handleOutsideClick = (e) => {
     if (!e.target.closest('.lang-switcher')) {
         langMenuOpen.value = false;
     }
+    if (!e.target.closest('.user-menu')) {
+        userMenuOpen.value = false;
+    }
 };
+
+function toggleUserMenu() {
+    userMenuOpen.value = !userMenuOpen.value;
+    if (userMenuOpen.value) langMenuOpen.value = false;
+}
+
+async function onUserLogoutClick() {
+    userMenuOpen.value = false;
+    await handleLogout();
+}
 
 /**
  * @description 未授权时踢回登录页。
@@ -247,22 +267,35 @@ onBeforeUnmount(() => {
                     </svg>
                 </button>
 
-                <div v-if="authStore.user" class="user-chip" :title="authStore.user.email">
-                    <span class="user-chip-email">{{ authStore.user.email }}</span>
+                <div v-if="authStore.user && avatarSeed" class="user-menu" :class="{ open: userMenuOpen }">
                     <button
                         type="button"
-                        class="user-logout-btn"
-                        @click="handleLogout"
-                        :aria-label="t('authLogout')"
-                        :title="`${t('authLogout')} · ${authStore.user.email}`"
+                        class="user-menu-trigger"
+                        @click.stop="toggleUserMenu"
+                        :aria-expanded="userMenuOpen"
+                        :aria-haspopup="true"
+                        :aria-label="authStore.user.email"
+                        :title="authStore.user.email"
                     >
-                        <span class="user-logout-text">{{ t('authLogout') }}</span>
-                        <svg class="user-logout-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-                            <polyline points="16 17 21 12 16 7"/>
-                            <line x1="21" y1="12" x2="9" y2="12"/>
-                        </svg>
+                        <UserAvatar :seed="avatarSeed" :size="32" :alt="authStore.user.email" />
+                        <span class="user-chip-email">{{ authStore.user.email }}</span>
                     </button>
+                    <div v-if="userMenuOpen" class="user-menu-dropdown" role="menu">
+                        <div class="user-menu-email" :title="authStore.user.email">{{ authStore.user.email }}</div>
+                        <button
+                            type="button"
+                            class="user-menu-item"
+                            role="menuitem"
+                            @click.stop="onUserLogoutClick"
+                        >
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                                <polyline points="16 17 21 12 16 7"/>
+                                <line x1="21" y1="12" x2="9" y2="12"/>
+                            </svg>
+                            {{ t('authLogout') }}
+                        </button>
+                    </div>
                 </div>
 
                 <div v-if="checkerStore.isChecking || checkerStore.isPaused"
@@ -353,18 +386,32 @@ onBeforeUnmount(() => {
         font-size: 14px;
     }
 
-    .user-chip {
-        display: flex;
+    /* 用户头像菜单 */
+    .user-menu {
+        position: relative;
+        flex-shrink: 0;
+    }
+
+    .user-menu-trigger {
+        display: inline-flex;
         align-items: center;
         gap: 8px;
-        max-width: min(200px, 28vw);
+        max-width: min(220px, 32vw);
         height: var(--ctrl-height-md);
-        padding: 0 6px 0 10px;
+        padding: 0 10px 0 4px;
+        border: none;
         border-radius: var(--radius-md);
         background: var(--bg-surface);
         box-shadow: var(--shadow-light-ring);
+        cursor: pointer;
+        color: inherit;
+        font: inherit;
         min-width: 0;
-        flex-shrink: 1;
+        transition: background var(--transition-fast);
+    }
+
+    .user-menu-trigger:hover {
+        background: var(--bg-secondary);
     }
 
     .user-chip-email {
@@ -376,61 +423,71 @@ onBeforeUnmount(() => {
         min-width: 0;
     }
 
-    .user-logout-btn {
-        flex-shrink: 0;
-        height: 28px;
+    .user-menu-dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 60;
+        min-width: 180px;
+        max-width: min(280px, 80vw);
+        padding: 6px;
+        border-radius: var(--radius-lg);
+        background: var(--bg-surface);
+        box-shadow: var(--shadow-full-card);
+    }
+
+    .user-menu-email {
+        padding: 8px 10px 6px;
+        font-size: 12px;
+        color: var(--text-tertiary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 4px;
+    }
+
+    .user-menu-item {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
         padding: 0 10px;
         border: none;
         border-radius: var(--radius-md);
-        background: var(--bg-secondary);
+        background: transparent;
         color: var(--text-primary);
-        font-size: 12px;
+        font-size: 13px;
         font-family: var(--font-sans);
+        font-weight: 500;
         cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 4px;
+        text-align: left;
+        transition: background var(--transition-fast);
     }
 
-    .user-logout-btn:hover {
-        background: var(--bg-input);
+    .user-menu-item:hover {
+        background: var(--bg-secondary);
     }
 
-    .user-logout-icon {
-        display: none;
-    }
-
-    /* 平板及以下：邮箱让位，登出收成图标，标签栏独占一行 */
+    /* 手机：只显示圆形头像，点开再登出 */
     @media (max-width: 768px) {
-        .user-chip {
+        .user-menu-trigger {
             max-width: none;
-            width: auto;
-            height: var(--ctrl-height-md);
+            width: 36px;
+            height: 36px;
             padding: 0;
+            justify-content: center;
             background: transparent;
             box-shadow: none;
-            flex-shrink: 0;
+        }
+
+        .user-menu-trigger:hover {
+            background: transparent;
         }
 
         .user-chip-email {
             display: none;
-        }
-
-        .user-logout-btn {
-            width: var(--ctrl-height-md);
-            height: var(--ctrl-height-md);
-            padding: 0;
-            background: var(--bg-surface);
-            box-shadow: var(--shadow-light-ring);
-        }
-
-        .user-logout-text {
-            display: none;
-        }
-
-        .user-logout-icon {
-            display: block;
         }
     }
 

@@ -756,7 +756,7 @@ body.modal-open {
     /* 工具按钮占第一行；Checker/Key 标签整行 */
     .topbar-actions > .lang-switcher,
     .topbar-actions > .theme-toggle-btn,
-    .topbar-actions > .user-chip,
+    .topbar-actions > .user-menu,
     .topbar-actions > .run-status {
         flex: 0 0 auto;
     }
