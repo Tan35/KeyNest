@@ -3,6 +3,7 @@ import { handleWebSocketSession } from './websocket_handler.js';
 import * as modelFetcher from './model_fetchers.js';
 import * as providersData from '../config/providers.json';
 import { checkRateLimit } from './utils/rateLimit.js';
+import { handleBackupRequest } from './backup.js';
 
 /**
  * @description 速率限制配置。
@@ -156,6 +157,11 @@ export default {
                 return rateLimitResponse(modelsLimit.retryAfterMs, request, env);
             }
             return handleModelsRequest(request, env);
+        }
+
+        // /api/backup：Key 保险箱云备份（Backup Token 鉴权，数据存 KV）
+        if (pathname === '/api/backup') {
+            return handleBackupRequest(request, env);
         }
 
         // 默认情况下，尝试提供静态资源（前端应用）

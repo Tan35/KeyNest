@@ -104,3 +104,91 @@ export function categorizeTokenError(res) {
 
     return { category: 'invalid', simpleMessage: res.message || '验证失败' };
 }
+
+/**
+ * @description Backup Token 最短长度（与后端一致）。
+ */
+export const BACKUP_TOKEN_MIN_LENGTH = 16;
+
+/**
+ * @description 生成高强度 Backup Token（48 位 hex）。
+ * @returns {string}
+ */
+export function generateBackupToken() {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * @description 调用云备份 API 时的统一错误提取。
+ * @param {Response} response
+ * @returns {Promise<Error>}
+ */
+async function backupApiError(response) {
+    const err = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    return new Error(err.error || `HTTP ${response.status}`);
+}
+
+/**
+ * @description 上传 Key 保险箱备份到 Cloudflare（以 Backup Token 为身份）。
+ * @param {string} backupToken
+ * @param {object|string} exportData - exportAllKeys 的对象或 JSON 字符串
+ * @returns {Promise<{ ok: boolean, updatedAt: string, keyCount: number }>}
+ */
+export async function uploadCloudBackup(backupToken, exportData) {
+    const body = typeof exportData === 'string' ? exportData : JSON.stringify(exportData);
+    const response = await fetch('/api/backup', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${backupToken}`,
+        },
+        body,
+    });
+    if (!response.ok) throw await backupApiError(response);
+    return response.json();
+}
+
+/**
+ * @description 从云端下载备份。
+ * @param {string} backupToken
+ * @returns {Promise<{ updatedAt: string|null, keyCount: number, data: object }>}
+ */
+export async function downloadCloudBackup(backupToken) {
+    const response = await fetch('/api/backup', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${backupToken}` },
+    });
+    if (!response.ok) throw await backupApiError(response);
+    return response.json();
+}
+
+/**
+ * @description 查询云端备份元信息（不含密钥内容）。
+ * @param {string} backupToken
+ * @returns {Promise<{ exists: boolean, updatedAt: string|null, keyCount: number }>}
+ */
+export async function fetchCloudBackupMeta(backupToken) {
+    const response = await fetch('/api/backup?meta=1', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${backupToken}` },
+    });
+    if (!response.ok) throw await backupApiError(response);
+    return response.json();
+}
+
+/**
+ * @description 删除云端备份。
+ * @param {string} backupToken
+ * @returns {Promise<{ ok: boolean }>}
+ */
+export async function deleteCloudBackup(backupToken) {
+    const response = await fetch('/api/backup', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${backupToken}` },
+    });
+    if (!response.ok) throw await backupApiError(response);
+    return response.json();
+}
+

@@ -66,6 +66,16 @@ Safety-critical bits:
 - **User-Agent and Accept-Language rotation** on every outbound call (can be disabled via env vars)
 - **In-memory rate limiting**: 10 WebSocket connections/minute and 30 `/models` calls/minute per IP
 - **CORS whitelist** driven by `ALLOWED_ORIGINS`, with wildcard subdomain support
+- **Cloud backup** (`/api/backup`) uses a client-held Backup Token (hashed with SHA-256 before storage in KV). One token ≈ one vault identity; there is no registration. Tokens are never stored in plaintext on the server.
+
+### Cloud backup (Key tab)
+
+1. Open **Key → Cloud Backup**
+2. Click **Generate** (or paste an existing long token ≥ 16 chars)
+3. **Backup to Cloud** uploads the local vault (keys + balance history)
+4. On another device, enter the **same token** and **Restore (Merge)** or **Restore (Replace)**
+
+Keep the token like a password. Anyone with the token can download that backup.
 
 ## Getting started
 
@@ -112,6 +122,7 @@ The app has two tabs: **Checker** and **Key**.
 - filtered by provider and status, sorted by any column
 - tested individually without running a whole batch
 - exported to JSON together with balance history and re-imported on another device
+- backed up to Cloudflare KV via a Backup Token, then restored on phone or another browser
 
 When a Checker run touches a key that's already in the vault, its status and balance are updated automatically, and a balance snapshot is appended to the history.
 
@@ -144,6 +155,7 @@ When a Checker run touches a key that's already in the vault, its status and bal
 │   ├── checkers.js           per-provider validation strategies
 │   ├── model_fetchers.js     model-list fetchers
 │   ├── websocket_handler.js  TaskManager, Durable Object, worker pool
+│   ├── backup.js             cloud vault backup (KV + Backup Token)
 │   └── utils/                cors · fetcher · rateLimit · security · url · userAgent
 ├── frontend/
 │   └── src/

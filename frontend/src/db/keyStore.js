@@ -260,7 +260,7 @@ export async function exportAllKeys() {
  * @returns {Promise<number>} - 成功导入的数量。
  */
 export async function importKeys(jsonStr) {
-    const data = JSON.parse(jsonStr);
+    const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
     const payload = Array.isArray(data)
         ? { keys: data, balanceSnapshots: [] }
         : { keys: Array.isArray(data?.keys) ? data.keys : (data ? [data] : []), balanceSnapshots: Array.isArray(data?.balanceSnapshots) ? data.balanceSnapshots : [] };
@@ -299,4 +299,17 @@ export async function importKeys(jsonStr) {
     }
     await tx.done;
     return importedKeys.length;
+}
+
+/**
+ * @description 清空本地保险箱（keys + balanceSnapshots）。
+ * 用于云端恢复时的「覆盖本地」模式。
+ * @returns {Promise<void>}
+ */
+export async function clearAllKeys() {
+    const db = await getDB();
+    const tx = db.transaction(['keys', 'balanceSnapshots'], 'readwrite');
+    await tx.objectStore('keys').clear();
+    await tx.objectStore('balanceSnapshots').clear();
+    await tx.done;
 }

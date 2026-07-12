@@ -33,10 +33,15 @@ export default defineConfig({
                 target: 'http://127.0.0.1:8787',
                 changeOrigin: true,
             },
+            '/api/backup': {
+                target: 'http://127.0.0.1:8787',
+                changeOrigin: true,
+            },
             '/check': {
                 target: 'ws://127.0.0.1:8787',
                 ws: true,
             },
+
         }
     }
 });

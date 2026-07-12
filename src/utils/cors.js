@@ -12,7 +12,7 @@ export function corsHeaders(request, env) {
     const validOrigin = validateOrigin(origin, allowedOrigins);
 
     const headers = {
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key, x-goog-api-key, anthropic-version, anthropic-dangerous-direct-browser-access",
         "Access-Control-Max-Age": "86400",
         "X-Robots-Tag": "noindex, nofollow",

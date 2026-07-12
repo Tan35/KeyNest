@@ -19,6 +19,12 @@ directory = "./frontend/dist"
 # enabled = true # 启用可观测性
 # head_sampling_rate = 1 # 日志采样率，1 表示 100% 采样
 
+# KV：Key 保险箱云备份（Backup Token → SHA-256 后作为键）
+[[kv_namespaces]]
+binding = "BACKUP_KV"
+id = "300560859c75404484a6288fc769efe3"
+preview_id = "26de9e95cb304df29e2f2b60bed4f44d"
+
 # Durable Objects 绑定配置
 # REGIONAL_FETCHER 是一个 Durable Object，用于实现区域性请求代理
 [[durable_objects.bindings]]
