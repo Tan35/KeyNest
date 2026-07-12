@@ -115,9 +115,11 @@ function handleUnauthorized() {
 }
 
 /**
- * @description 退出登录。
+ * @description 退出登录（二次确认）。
  */
-function handleLogout() {
+async function handleLogout() {
+    const confirmed = await uiStore.showConfirmation(t('confirmLogout'));
+    if (!confirmed) return;
     authStore.logout();
     keyManager.keys = [];
     keyManager.showManager = false;

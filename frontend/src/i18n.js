@@ -67,6 +67,7 @@ const messages = {
         authPasswordTooShort: '密碼至少 8 位',
         authLoggedOut: '已登出',
         authRequired: '請先登入',
+        confirmLogout: '確定要登出嗎？',
 
         // ── Provider Selector ──
         labelProvider: '提供商',
@@ -401,6 +402,7 @@ const messages = {
         authPasswordTooShort: '密码至少 8 位',
         authLoggedOut: '已登出',
         authRequired: '请先登录',
+        confirmLogout: '确定要登出吗？',
 
         // ── Provider Selector ──
         labelProvider: '提供商',
@@ -734,6 +736,7 @@ const messages = {
         authPasswordTooShort: 'Password must be at least 8 characters',
         authLoggedOut: 'Signed out',
         authRequired: 'Please sign in first',
+        confirmLogout: 'Are you sure you want to log out?',
 
         // ── Provider Selector ──
         labelProvider: 'Provider',
