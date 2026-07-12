@@ -1,9 +1,8 @@
 <script setup>
-import { computed } from 'vue';
-import { gradientToDataURL } from '@outpacelabs/avatars';
+import { ref, watch } from 'vue';
 
 const props = defineProps({
-    /** 确定性 seed，同一用户始终同一图案 */
+    /** 确定性 seed（用户 id），同一用户始终同一图案 */
     seed: {
         type: [String, Number],
         required: true,
@@ -11,12 +10,7 @@ const props = defineProps({
     /** 显示尺寸（CSS px） */
     size: {
         type: Number,
-        default: 32,
-    },
-    /** 生成分辨率，略高于显示尺寸更清晰 */
-    renderSize: {
-        type: Number,
-        default: 96,
+        default: 28,
     },
     alt: {
         type: String,
@@ -24,15 +18,42 @@ const props = defineProps({
     },
 });
 
-const src = computed(() => {
-    if (props.seed === '' || props.seed == null) return '';
+const src = ref('');
+
+/** Style 单例缓存（异步加载后复用） */
+let cachedStyle = null;
+
+async function getOpenPeepsStyle() {
+    if (cachedStyle) return cachedStyle;
+    const [{ Style }, openPeepsMod] = await Promise.all([
+        import('@dicebear/core'),
+        import('@dicebear/styles/open-peeps.json'),
+    ]);
+    const definition = openPeepsMod.default ?? openPeepsMod;
+    cachedStyle = new Style(definition);
+    return cachedStyle;
+}
+
+async function renderAvatar(seed) {
+    if (seed === '' || seed == null) {
+        src.value = '';
+        return;
+    }
     try {
-        return gradientToDataURL(props.seed, { size: props.renderSize });
+        const { Avatar } = await import('@dicebear/core');
+        const style = await getOpenPeepsStyle();
+        const avatar = new Avatar(style, {
+            seed: String(seed),
+            size: 96,
+        });
+        src.value = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(avatar.toString())}`;
     } catch (e) {
         console.warn('avatar render failed', e);
-        return '';
+        src.value = '';
     }
-});
+}
+
+watch(() => props.seed, (seed) => { renderAvatar(seed); }, { immediate: true });
 </script>
 
 <template>
@@ -59,6 +80,7 @@ const src = computed(() => {
     display: block;
     border-radius: 9999px;
     object-fit: cover;
+    object-position: center 15%;
     flex-shrink: 0;
     box-shadow: var(--shadow-light-ring);
     background: var(--bg-secondary);

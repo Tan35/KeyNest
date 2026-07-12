@@ -12,7 +12,8 @@
     "db:migrate": "wrangler d1 execute keynest --remote --file=./migrations/0001_init.sql"
   },
   "dependencies": {
-    "@outpacelabs/avatars": "^0.2.2",
+    "@dicebear/core": "^10.3.0",
+    "@dicebear/styles": "^10.2.0",
     "pinia": "^2.1.7",
     "vue": "^3.4.21",
     "vue-virtual-scroller": "^2.0.0-beta.8"

@@ -277,7 +277,7 @@ onBeforeUnmount(() => {
                         :aria-label="authStore.user.email"
                         :title="authStore.user.email"
                     >
-                        <UserAvatar :seed="avatarSeed" :size="32" :alt="authStore.user.email" />
+                        <UserAvatar :seed="avatarSeed" :size="28" :alt="authStore.user.email" />
                         <span class="user-chip-email">{{ authStore.user.email }}</span>
                     </button>
                     <div v-if="userMenuOpen" class="user-menu-dropdown" role="menu">
@@ -397,8 +397,8 @@ onBeforeUnmount(() => {
         align-items: center;
         gap: 8px;
         max-width: min(220px, 32vw);
-        height: var(--ctrl-height-md);
-        padding: 0 10px 0 4px;
+        height: 32px;
+        padding: 0 8px 0 2px;
         border: none;
         border-radius: var(--radius-md);
         background: var(--bg-surface);
@@ -474,8 +474,8 @@ onBeforeUnmount(() => {
     @media (max-width: 768px) {
         .user-menu-trigger {
             max-width: none;
-            width: 36px;
-            height: 36px;
+            width: 32px;
+            height: 32px;
             padding: 0;
             justify-content: center;
             background: transparent;
