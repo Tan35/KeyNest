@@ -426,14 +426,16 @@ onBeforeUnmount(() => {
     .user-menu-dropdown {
         position: absolute;
         top: calc(100% + 6px);
-        right: 0;
-        z-index: 60;
+        right: 0; /* 桌面：顶栏靠右，向左展开仍在屏内 */
+        left: auto;
+        z-index: 80;
         min-width: 180px;
-        max-width: min(280px, 80vw);
+        max-width: min(280px, calc(100vw - 24px));
         padding: 6px;
         border-radius: var(--radius-lg);
         background: var(--bg-surface);
         box-shadow: var(--shadow-full-card);
+        box-sizing: border-box;
     }
 
     .user-menu-email {
@@ -488,6 +490,17 @@ onBeforeUnmount(() => {
 
         .user-chip-email {
             display: none;
+        }
+
+        /*
+         * 手机上头像在工具行左侧（语言/主题之后），right:0 会向左展开并裁出视口。
+         * 改为贴齐触发器左侧、向右展开；并用 max-width 限制在屏内。
+         */
+        .user-menu-dropdown {
+            left: 0;
+            right: auto;
+            min-width: 160px;
+            max-width: min(240px, calc(100vw - 32px));
         }
     }
 
