@@ -15,6 +15,7 @@ import {
 import { parseKeys } from '@/utils/keyParser';
 import { t } from '@/i18n';
 import { getToken } from '@/stores/authToken';
+import { openCheckWebSocket } from '@/utils/ws';
 
 /**
  * @description checker Store 用于管理 API Key 检测的核心逻辑和状态。
@@ -124,42 +125,23 @@ export const useCheckerStore = defineStore('checker', () => {
      * @description 确保 WebSocket 连接已建立且处于 OPEN 状态。
      * @returns {Promise<void>}
      */
-    function _ensureConnection() {
-        return new Promise((resolve, reject) => {
-            if (socket.value && socket.value.readyState === WebSocket.OPEN) {
-                resolve();
-                return;
-            }
+    async function _ensureConnection() {
+        if (socket.value && socket.value.readyState === WebSocket.OPEN) {
+            return;
+        }
 
-            // 关闭旧连接（如果有）
-            _cleanupSocket();
+        // 关闭旧连接（如果有）
+        _cleanupSocket();
 
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const jwt = getToken();
-            if (!jwt) {
-                reject(new Error('Unauthorized'));
-                return;
-            }
-            const ws = new WebSocket(`${protocol}//${host}/check?token=${encodeURIComponent(jwt)}`);
+        const jwt = getToken();
+        if (!jwt) {
+            throw new Error('Unauthorized');
+        }
 
-            ws.onopen = () => {
-                socket.value = ws;
-                _setupMessageHandler(ws);
-                resolve();
-            };
-
-            ws.onerror = () => {
-                reject(new Error('WebSocket connection failed'));
-            };
-
-            // 如果在连接过程中关闭
-            ws.onclose = (event) => {
-                if (event.code !== 1000 && socket.value === ws) {
-                    reject(new Error('WebSocket closed during connection'));
-                }
-            };
-        });
+        // 经 Vercel 反代时 same-origin WS 常失败，会自动回退到 Worker 域名
+        const ws = await openCheckWebSocket(jwt);
+        socket.value = ws;
+        _setupMessageHandler(ws);
     }
 
     /**

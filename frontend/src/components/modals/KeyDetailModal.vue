@@ -7,6 +7,7 @@ import { fetchModels } from '@/api';
 import { t, currentLang } from '@/i18n';
 import CustomSelect from '@/components/CustomSelect.vue';
 import { getToken } from '@/stores/authToken';
+import { openCheckWebSocket } from '@/utils/ws';
 
 const keyManager   = useKeyManagerStore();
 const uiStore      = useUiStore();
@@ -128,25 +129,56 @@ async function runConnectionTest(modelOverride) {
         validationMaxTokens: configStore.validationMaxTokens,
         validationMaxOutputTokens: configStore.validationMaxOutputTokens,
     };
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
     const jwt = getToken();
     if (!jwt) throw new Error(t('authRequired'));
     const startedAt = performance.now();
+
+    let ws;
+    try {
+        ws = await openCheckWebSocket(jwt);
+    } catch {
+        throw new Error(t('kdWsConnFailed'));
+    }
+
     const result = await new Promise((resolve, reject) => {
-        const ws = new WebSocket(`${protocol}//${host}/check?token=${encodeURIComponent(jwt)}`);
-        const timeout = setTimeout(() => { ws.close(); reject(new Error(t('kdTestTimeout'))); }, 30000);
-        ws.onopen = () => ws.send(JSON.stringify({
-            command: 'start',
-            data: { tokens: [{ token: keyRecord.value.token, order: 0 }], providerConfig, concurrency: 1 },
-        }));
+        const timeout = setTimeout(() => {
+            try { ws.close(); } catch { /* ignore */ }
+            reject(new Error(t('kdTestTimeout')));
+        }, 30000);
+
         ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'result') { clearTimeout(timeout); ws.close(); resolve(msg.data); }
-            else if (msg.type === 'error') { clearTimeout(timeout); ws.close(); reject(new Error(msg.message)); }
+            try {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'result') {
+                    clearTimeout(timeout);
+                    try { ws.close(); } catch { /* ignore */ }
+                    resolve(msg.data);
+                } else if (msg.type === 'error') {
+                    clearTimeout(timeout);
+                    try { ws.close(); } catch { /* ignore */ }
+                    reject(new Error(msg.message));
+                }
+            } catch (e) {
+                clearTimeout(timeout);
+                reject(e);
+            }
         };
-        ws.onerror = () => { clearTimeout(timeout); reject(new Error(t('kdWsConnFailed'))); };
-        ws.onclose = () => { clearTimeout(timeout); };
+        ws.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error(t('kdWsConnFailed')));
+        };
+        ws.onclose = () => {
+            clearTimeout(timeout);
+        };
+
+        ws.send(JSON.stringify({
+            command: 'start',
+            data: {
+                tokens: [{ token: keyRecord.value.token, order: 0 }],
+                providerConfig,
+                concurrency: 1,
+            },
+        }));
     });
 
     return {
@@ -170,8 +202,10 @@ async function testConnection() {
         }
     } catch (err) {
         const msg = err.message || '';
-        if (msg === t('kdWsConnFailed') || msg === t('kdTestTimeout'))
-            uiStore.showToast(t('toastKdTestBackendDown'), 'error', 5000);
+        if (msg === t('kdWsConnFailed'))
+            uiStore.showToast(t('toastKdTestWsFailed'), 'error', 5000);
+        else if (msg === t('kdTestTimeout'))
+            uiStore.showToast(t('toastKdTestTimeout'), 'error', 5000);
         else uiStore.showToast(t('toastKdTestFailed', { msg }), 'error');
     } finally { isTesting.value = false; }
 }
