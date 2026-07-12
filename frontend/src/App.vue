@@ -211,11 +211,6 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div v-if="authStore.user" class="user-chip" :title="authStore.user.email">
-                    <span class="user-chip-email">{{ authStore.user.email }}</span>
-                    <button type="button" class="user-logout-btn" @click="handleLogout">{{ t('authLogout') }}</button>
-                </div>
-
                 <!-- 深色模式切换按钮 -->
                 <button
                     class="theme-toggle-btn"
@@ -240,6 +235,24 @@ onBeforeUnmount(() => {
                         <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
                     </svg>
                 </button>
+
+                <div v-if="authStore.user" class="user-chip" :title="authStore.user.email">
+                    <span class="user-chip-email">{{ authStore.user.email }}</span>
+                    <button
+                        type="button"
+                        class="user-logout-btn"
+                        @click="handleLogout"
+                        :aria-label="t('authLogout')"
+                        :title="`${t('authLogout')} · ${authStore.user.email}`"
+                    >
+                        <span class="user-logout-text">{{ t('authLogout') }}</span>
+                        <svg class="user-logout-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                            <polyline points="16 17 21 12 16 7"/>
+                            <line x1="21" y1="12" x2="9" y2="12"/>
+                        </svg>
+                    </button>
+                </div>
 
                 <div v-if="checkerStore.isChecking || checkerStore.isPaused"
                     class="run-status"
@@ -333,12 +346,14 @@ onBeforeUnmount(() => {
         display: flex;
         align-items: center;
         gap: 8px;
-        max-width: 220px;
+        max-width: min(200px, 28vw);
         height: var(--ctrl-height-md);
         padding: 0 6px 0 10px;
         border-radius: var(--radius-md);
         background: var(--bg-surface);
         box-shadow: var(--shadow-light-ring);
+        min-width: 0;
+        flex-shrink: 1;
     }
 
     .user-chip-email {
@@ -361,10 +376,57 @@ onBeforeUnmount(() => {
         font-size: 12px;
         font-family: var(--font-sans);
         cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
     }
 
     .user-logout-btn:hover {
         background: var(--bg-input);
+    }
+
+    .user-logout-icon {
+        display: none;
+    }
+
+    /* 平板及以下：邮箱让位，登出收成图标，标签栏独占一行 */
+    @media (max-width: 768px) {
+        .user-chip {
+            max-width: none;
+            width: auto;
+            height: var(--ctrl-height-md);
+            padding: 0;
+            background: transparent;
+            box-shadow: none;
+            flex-shrink: 0;
+        }
+
+        .user-chip-email {
+            display: none;
+        }
+
+        .user-logout-btn {
+            width: var(--ctrl-height-md);
+            height: var(--ctrl-height-md);
+            padding: 0;
+            background: var(--bg-surface);
+            box-shadow: var(--shadow-light-ring);
+        }
+
+        .user-logout-text {
+            display: none;
+        }
+
+        .user-logout-icon {
+            display: block;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .lang-switcher .lang-label {
+            display: none;
+        }
     }
 
     /* 内容分隔线 */
