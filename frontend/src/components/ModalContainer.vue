@@ -11,14 +11,15 @@
 <script setup>
 import { computed, defineAsyncComponent } from 'vue';
 import { useUiStore } from '@/stores/ui';
+// 确认框极轻且调用频繁：同步导入，避免 async chunk 首开/每次 resolve 延迟
+import ConfirmationModal from './modals/ConfirmationModal.vue';
 
 const uiStore = useUiStore();
 
-// 异步导入模态框组件，以优化初始加载性能
+// 较大弹窗仍异步加载，降低首屏体积
 const DetailsModal = defineAsyncComponent(() => import('./modals/DetailsModal.vue'));
 const ModelSelectorModal = defineAsyncComponent(() => import('./modals/ModelSelectorModal.vue'));
 const SettingsModal = defineAsyncComponent(() => import('./modals/SettingsModal.vue'));
-const ConfirmationModal = defineAsyncComponent(() => import('./modals/ConfirmationModal.vue'));
 const KeyDetailModal = defineAsyncComponent(() => import('./modals/KeyDetailModal.vue'));
 
 /**
@@ -43,7 +44,7 @@ const activeModalComponent = computed(() => {
 </script>
 
 <style scoped>
-    /* Vercel Overlay Backdrop — hsla(0, 0%, 98%, 1) per SKILL.md */
+    /* Overlay backdrop — 短过渡，避免「点了半天才看见」 */
     .custom-modal {
         position: fixed;
         top: 0;
@@ -52,15 +53,15 @@ const activeModalComponent = computed(() => {
         height: 100vh;
         height: 100dvh;
         background: var(--ds-overlay-backdrop);
-        -webkit-backdrop-filter: blur(4px);
-        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(2px);
+        backdrop-filter: blur(2px);
         display: flex;
         justify-content: center;
         align-items: center;
         z-index: 10000;
         opacity: 0;
         visibility: hidden;
-        transition: opacity 0.2s ease;
+        transition: opacity var(--modal-open-dur) var(--modal-ease);
     }
 
     .custom-modal.show {
@@ -85,10 +86,17 @@ const activeModalComponent = computed(() => {
         box-shadow: var(--shadow-full-card);
     }
 
-    @media (max-width: 480px) {
+    @media (max-width: 768px) {
         .custom-modal {
-            -webkit-backdrop-filter: blur(2px);
-            backdrop-filter: blur(2px);
+            /* 移动端去掉 blur，减轻合成开销 */
+            -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .custom-modal {
+            transition: none !important;
         }
     }
 </style>

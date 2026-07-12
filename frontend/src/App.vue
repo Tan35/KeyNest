@@ -61,23 +61,30 @@ watch(() => checkerStore.lastStatusMessage, (newMessage) => {
 }, { deep: true });
 
 /**
- * @description 侦听弹窗状态，以实现可靠的滚动锁定。
- * 当模态框激活时，锁定页面滚动；模态框关闭时，恢复滚动。
+ * @description 侦听弹窗状态，锁定页面滚动。
+ * 使用 overflow 锁定代替 position:fixed，减少打开瞬间的重排卡顿。
  */
 watch(() => uiStore.isModalActive, (isActive) => {
+    const html = document.documentElement;
     const body = document.body;
     if (isActive) {
         scrollPosition.value = window.scrollY;
-        body.style.position = 'fixed';
-        body.style.top = `-${scrollPosition.value}px`;
-        body.style.width = '100%';
+        const pad = Math.max(0, window.innerWidth - html.clientWidth);
+        html.classList.add('modal-open');
         body.classList.add('modal-open');
+        html.style.overflow = 'hidden';
+        body.style.overflow = 'hidden';
+        if (pad > 0) body.style.paddingRight = `${pad}px`;
     } else {
-        body.style.position = '';
-        body.style.top = '';
-        body.style.width = '';
+        html.classList.remove('modal-open');
         body.classList.remove('modal-open');
-        window.scrollTo(0, scrollPosition.value);
+        html.style.overflow = '';
+        body.style.overflow = '';
+        body.style.paddingRight = '';
+        // 仅在需要时恢复滚动位置（overflow 锁定通常不丢 scrollY）
+        if (typeof scrollPosition.value === 'number') {
+            window.scrollTo(0, scrollPosition.value);
+        }
     }
 });
 
@@ -159,12 +166,14 @@ onBeforeUnmount(() => {
     document.removeEventListener('keydown', handleEscKey);
     document.removeEventListener('click', handleOutsideClick);
     window.removeEventListener('keynest:unauthorized', handleUnauthorized);
-    // 完整恢复 body 样式，防止残留
+    // 完整恢复滚动锁定，防止残留
+    const html = document.documentElement;
     const body = document.body;
-    body.style.position = '';
-    body.style.top = '';
-    body.style.width = '';
+    html.classList.remove('modal-open');
     body.classList.remove('modal-open');
+    html.style.overflow = '';
+    body.style.overflow = '';
+    body.style.paddingRight = '';
 });
 </script>
 

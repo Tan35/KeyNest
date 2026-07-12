@@ -69,12 +69,12 @@ export const useUiStore = defineStore('ui', {
                 const raw = getComputedStyle(document.documentElement)
                     .getPropertyValue('--modal-close-dur')
                     .trim();
-                if (!raw) return 150;
-                if (raw.endsWith('ms')) return parseFloat(raw) || 150;
-                if (raw.endsWith('s')) return (parseFloat(raw) || 0.15) * 1000;
-                return parseFloat(raw) || 150;
+                if (!raw) return 100;
+                if (raw.endsWith('ms')) return parseFloat(raw) || 100;
+                if (raw.endsWith('s')) return (parseFloat(raw) || 0.1) * 1000;
+                return parseFloat(raw) || 100;
             } catch {
-                return 150;
+                return 100;
             }
         },
         /**

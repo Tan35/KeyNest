@@ -187,9 +187,10 @@
 
 /* ── Animation tokens ── */
 :root {
-    --modal-open-dur:  250ms;
-    --modal-close-dur: 150ms;
-    --modal-scale:     0.96;
+    /* 弹窗开合：短、轻微缩放，降低「点了才出来」的体感延迟 */
+    --modal-open-dur:  120ms;
+    --modal-close-dur: 100ms;
+    --modal-scale:     0.98;
     --modal-ease:      cubic-bezier(0.22, 1, 0.36, 1);
     --panel-open-dur:  400ms;
     --panel-close-dur: 350ms;

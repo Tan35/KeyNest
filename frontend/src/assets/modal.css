@@ -67,12 +67,11 @@
 .t-modal {
     transform-origin: center;
     transform: scale(var(--modal-scale));
-    opacity: 0;
+    opacity: 0.92; /* 首帧接近可见，避免长时间全透明 */
     pointer-events: none;
     transition:
         transform var(--modal-open-dur) var(--modal-ease),
         opacity   var(--modal-open-dur) var(--modal-ease);
-    will-change: transform, opacity;
 }
 .t-modal.is-open {
     transform: scale(1);
@@ -80,7 +79,7 @@
     pointer-events: auto;
 }
 .t-modal.is-closing {
-    transform: scale(var(--modal-scale-close));
+    transform: scale(var(--modal-scale-close, var(--modal-scale)));
     opacity: 0;
     pointer-events: none;
     transition:
