@@ -10,7 +10,7 @@ const props = defineProps({
     /** 显示尺寸（CSS px） */
     size: {
         type: Number,
-        default: 28,
+        default: 24,
     },
     alt: {
         type: String,
@@ -78,11 +78,10 @@ watch(() => props.seed, (seed) => { renderAvatar(seed); }, { immediate: true });
 <style scoped>
 .user-avatar {
     display: block;
-    border-radius: 9999px;
+    border-radius: 9999px; /* 仅裁成圆形，不加描边/外环 */
     object-fit: cover;
     object-position: center 15%;
     flex-shrink: 0;
-    box-shadow: var(--shadow-light-ring);
     background: var(--bg-secondary);
     user-select: none;
     -webkit-user-drag: none;
@@ -92,6 +91,5 @@ watch(() => props.seed, (seed) => { renderAvatar(seed); }, { immediate: true });
     display: inline-block;
     border-radius: 9999px;
     background: var(--bg-secondary);
-    box-shadow: var(--shadow-light-ring);
 }
 </style>

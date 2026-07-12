@@ -277,7 +277,7 @@ onBeforeUnmount(() => {
                         :aria-label="authStore.user.email"
                         :title="authStore.user.email"
                     >
-                        <UserAvatar :seed="avatarSeed" :size="28" :alt="authStore.user.email" />
+                        <UserAvatar :seed="avatarSeed" :size="24" :alt="authStore.user.email" />
                         <span class="user-chip-email">{{ authStore.user.email }}</span>
                     </button>
                     <div v-if="userMenuOpen" class="user-menu-dropdown" role="menu">
@@ -392,17 +392,18 @@ onBeforeUnmount(() => {
         flex-shrink: 0;
     }
 
+    /* 桌面：轻量触发器，避免「外层长框 + 内层圆框」双重框感 */
     .user-menu-trigger {
         display: inline-flex;
         align-items: center;
         gap: 8px;
         max-width: min(220px, 32vw);
         height: 32px;
-        padding: 0 8px 0 2px;
+        padding: 0 8px 0 4px;
         border: none;
         border-radius: var(--radius-md);
-        background: var(--bg-surface);
-        box-shadow: var(--shadow-light-ring);
+        background: transparent;
+        box-shadow: none;
         cursor: pointer;
         color: inherit;
         font: inherit;
@@ -476,8 +477,8 @@ onBeforeUnmount(() => {
     @media (max-width: 768px) {
         .user-menu-trigger {
             max-width: none;
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             padding: 0;
             justify-content: center;
             background: transparent;
