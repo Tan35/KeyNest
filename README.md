@@ -6,7 +6,7 @@
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Tan35/KeyNest)
 
-A self-hosted tool for validating LLM API keys in bulk and keeping track of them over time. Paste a list of keys, pick a provider, hit start, and get back a categorized report — valid, invalid, rate-limited, low balance, zero balance, duplicates — with real-time progress. Keys worth keeping can be dropped into a local vault where you can tag them, re-test them on demand, and see their balance history.
+A self-hosted tool for validating LLM API keys in bulk and keeping a per-user key vault. Paste a list of keys, pick a provider, hit start, and get back a categorized report — valid, invalid, rate-limited, low balance, zero balance, duplicates — with real-time progress.
 
 Forked from [ssfun/llm-api-key-checker](https://github.com/ssfun/llm-api-key-checker); thanks to the original author for the foundation this project was built on.
 
@@ -18,179 +18,101 @@ Forked from [ssfun/llm-api-key-checker](https://github.com/ssfun/llm-api-key-che
 
 ## What it does
 
-- **Bulk checking up to 50,000 keys per run**, streamed over a single WebSocket so results appear as they come in
-- **Persistent key vault** — any key can be saved locally (IndexedDB) with an alias, tags, and per-key balance snapshots over time
+- **Email/password auth** with invite-code registration; the app is gated until you sign in
+- **Per-user key vault on Cloudflare D1** (not browser IndexedDB)
+- **Bulk checking up to 50,000 keys per run**, streamed over a single WebSocket
 - **24 providers out of the box**, including OpenAI, Anthropic, Google Gemini, DeepSeek, Moonshot, Groq, xAI, Qwen, Zhipu, SiliconFlow, OpenRouter, NewAPI, Perplexity, Nvidia, GitHub Models, and more
-- **Balance queries** for providers that expose them: DeepSeek, Moonshot, SiliconFlow, OpenRouter, NewAPI
-- **Regional egress** — route outbound requests through one of nine geographic regions via Cloudflare Durable Objects, useful when a provider gates access by country
-- **Task control** — pause, resume, or stop a run at any time; the connection reconnects automatically if it drops mid-batch
+- **Balance queries** for providers that expose them
+- **Regional egress** via Cloudflare Durable Objects
+- **Task control** — pause, resume, or stop; reconnects if the socket drops mid-batch
 - **Trilingual UI** (English / 繁體 / 简体) with light and dark themes
 
 ## How it's built
 
-A single Cloudflare Worker serves the Vue 3 frontend as static assets *and* hosts the checking backend — there is no separate server process to run.
-
 ```
-Browser (Vue 3 + Pinia + IndexedDB)
+Browser (Vue 3 + Pinia)
+  │  JWT in localStorage → Authorization: Bearer
   │
-  ├── HTTP POST /models   fetch available models for a key
-  └── WS      /check      stream key-check results
+  ├── POST /api/auth/register|login|me
+  ├── /api/keys…           user vault (D1)
+  ├── HTTP POST /models
+  └── WS      /check?token=JWT
        │
        ▼
-Cloudflare Worker (src/index.js)
-  ├── TaskManager          worker-pool, up to 20 concurrent in-flight checks
-  ├── Provider strategies  openai · openai_responses · anthropic · gemini · tavily
-  └── RegionalFetcher (DO) optional outbound proxy tied to a region
+Cloudflare Worker
+  ├── D1 (users + vault_keys + balance_snapshots)
+  ├── checkers / model_fetchers
+  └── RegionalFetcher (DO)
 ```
 
-### Frontend
+## Auth (v2.2)
 
-Five Pinia stores split the state cleanly: `config` (current provider, region, input), `checker` (WebSocket lifecycle and batch scheduling), `results` (categorized result buckets), `keyManager` (the persistent vault), and `ui` (modals, toasts, theme).
+- Register requires **invite code** (default in `wrangler.toml`: `KeyNest2026`)
+- Password: min 8 chars, PBKDF2-SHA-256 (100k iterations)
+- Session: HS256 JWT (7 days), stored in the browser
+- All checker/vault APIs require a valid JWT
+- Log out clears the local JWT
 
-A few details worth calling out:
+Change secrets in `wrangler.toml` `[vars]` (or better: `wrangler secret put JWT_SECRET`):
 
-- Result lists use `vue-virtual-scroller` so tens of thousands of rows scroll smoothly
-- Incoming results are buffered through a 100 ms window before being flushed to the store, which keeps the DOM quiet during heavy runs
-- Large `.txt` imports are parsed in 10,000-line chunks via `setTimeout(0)` so the UI never freezes
-- The vault lives entirely in IndexedDB (`idb` wrapper). Nothing syncs to any server unless you explicitly export
+| Variable | Purpose |
+|----------|---------|
+| `INVITE_CODE` | Registration invite code |
+| `JWT_SECRET` | Signs session tokens — **change in production** |
+| `ALLOWED_ORIGINS` | CORS allow list |
 
-### Backend
+Apply the D1 schema once (already run on the project D1 if you used the same account):
 
-One WebSocket connection is reused across many batches of 500 keys. The client ships a `start` command with a batch, the server streams back individual `result` messages plus a final `batch_done`, and the client then ships the next batch on the same socket. This avoids the per-batch connection overhead that a naive design would incur.
-
-Per-provider checking strategies live in `src/checkers.js`. Adding a new provider usually means registering a strategy, touching `model_fetchers.js`, and adding an entry to `config/providers.json`.
-
-Safety-critical bits:
-
-- **SSRF protection** rejects private, loopback, link-local, and CGNAT addresses before any outbound request is made
-- **User-Agent and Accept-Language rotation** on every outbound call (can be disabled via env vars)
-- **In-memory rate limiting**: 10 WebSocket connections/minute and 30 `/models` calls/minute per IP
-- **CORS whitelist** driven by `ALLOWED_ORIGINS`, with wildcard subdomain support
-- **Cloud backup** (`/api/backup`) uses a client-held Backup Token (hashed with SHA-256 before storage in KV). One token ≈ one vault identity; there is no registration. Tokens are never stored in plaintext on the server.
-
-### Cloud backup (Key tab)
-
-1. Open **Key → Cloud Backup**
-2. Click **Generate** (or paste an existing long token ≥ 16 chars)
-3. **Backup to Cloud** uploads the local vault (keys + balance history)
-4. On another device, enter the **same token** and **Restore (Merge)** or **Restore (Replace)**
-
-Keep the token like a password. Anyone with the token can download that backup.
+```bash
+npm run db:migrate
+# or: wrangler d1 execute keynest --remote --file=./migrations/0001_init.sql
+```
 
 ## Getting started
 
-Requirements: Node 18+, a Cloudflare account, and `wrangler` (installed via `npm`).
+Requirements: Node 18+, a Cloudflare account, and `wrangler`.
 
 ```bash
-git clone https://github.com/Tan35/api-check.git
-cd api-check
+git clone https://github.com/Tan35/KeyNest.git
+cd KeyNest
 npm install
-```
-
-Edit `wrangler.toml` and set `ALLOWED_ORIGINS` to the domain you'll serve from:
-
-```toml
-[vars]
-ALLOWED_ORIGINS = "[\"https://your-domain.com\"]"
-ENABLE_UA_RANDOMIZATION = "true"
-ENABLE_ACCEPT_LANGUAGE_RANDOMIZATION = "true"
-```
-
-Run locally:
-
-```bash
-npm run dev           # Vite dev server, frontend only
-npm run dev:wrangler  # Wrangler dev, backend + built assets
-npm run dev:full      # build frontend, then run Wrangler
-```
-
-Deploy to Cloudflare:
-
-```bash
+npm run db:migrate
 npm run deploy
 ```
 
 ## Using it
 
-The app has two tabs: **Checker** and **Key**.
-
-**Checker** is for one-off batch validation. Paste keys (comma, semicolon, or newline separated), or drop a `.txt` file. Pick a provider, tweak the model or base URL if needed, and start. Results land in six tabs — Valid, Low balance, Zero balance, Rate limited, Invalid, Duplicate — and can be copied or exported per category.
-
-**Key** is the persistent vault. Keys added here survive page reloads and can be:
-
-- searched by token, alias, provider, or tag
-- filtered by provider and status, sorted by any column
-- tested individually without running a whole batch
-- exported to JSON together with balance history and re-imported on another device
-- backed up to Cloudflare KV via a Backup Token, then restored on phone or another browser
-
-When a Checker run touches a key that's already in the vault, its status and balance are updated automatically, and a balance snapshot is appended to the history.
-
-## Configuration
-
-**`config/providers.json`** — the provider catalog. Each entry specifies:
-
-| Field                          | Purpose                                                      |
-| ------------------------------ | ------------------------------------------------------------ |
-| `apiStyle`                     | Which request strategy to use (`openai`, `anthropic`, `gemini`, `openai_responses`, `tavily`) |
-| `defaultBase` / `defaultModel` | Defaults shown in the UI                                     |
-| `hasBalance`                   | Whether balance lookup is supported                          |
-| `balanceEndpoint`              | Custom endpoint for balance queries, when applicable         |
-
-**`config/regions.json`** — the region catalog for Durable Object egress.
-
-**`wrangler.toml`** — Worker-level config:
-
-| Variable                               | Default  | Purpose                                           |
-| -------------------------------------- | -------- | ------------------------------------------------- |
-| `ALLOWED_ORIGINS`                      | —        | JSON array of allowed CORS origins (wildcards OK) |
-| `ENABLE_UA_RANDOMIZATION`              | `"true"` | Rotate User-Agent per outbound request            |
-| `ENABLE_ACCEPT_LANGUAGE_RANDOMIZATION` | `"true"` | Rotate Accept-Language per outbound request       |
+1. Open the site → **Register** with email, password, and invite code (or **Sign in**)
+2. **Checker**: paste keys, pick provider, start
+3. **Key**: vault is stored under your account on D1; import/export still works and writes to your user data
 
 ## Project layout
 
 ```
 ├── src/                      Cloudflare Worker
-│   ├── index.js              routing + static asset fallback
-│   ├── checkers.js           per-provider validation strategies
-│   ├── model_fetchers.js     model-list fetchers
-│   ├── websocket_handler.js  TaskManager, Durable Object, worker pool
-│   ├── backup.js             cloud vault backup (KV + Backup Token)
-│   └── utils/                cors · fetcher · rateLimit · security · url · userAgent
+│   ├── index.js              routing + auth gates
+│   ├── auth.js               register / login / me
+│   ├── vault.js              /api/keys CRUD
+│   ├── checkers.js
+│   ├── model_fetchers.js
+│   ├── websocket_handler.js
+│   └── utils/
+├── migrations/               D1 SQL
 ├── frontend/
 │   └── src/
-│       ├── App.vue
-│       ├── stores/           5 Pinia stores
-│       ├── components/       modals, key cards, selectors, panels
-│       ├── db/keyStore.js    IndexedDB wrapper (idb)
-│       ├── utils/keyParser.js
-│       └── i18n.js           three-language dictionary
+│       ├── components/AuthPage.vue
+│       ├── stores/auth.js · authToken.js · keyManager.js
+│       └── db/keyStore.js    API client (not IndexedDB)
 ├── config/
-│   ├── providers.json        24 providers
-│   └── regions.json          9 regions
-├── types/                    ambient .d.ts declarations
 └── wrangler.toml
 ```
 
-## A note on keys and safety
+## Safety notes
 
-This tool is designed for validating keys you own. Keys never touch persistent storage on the server side — the Worker proxies requests to the upstream provider and nothing else. The local vault is confined to IndexedDB on the device where it was created.
-
-If you deploy this publicly, keep `ALLOWED_ORIGINS` tight and consider placing Cloudflare Access in front of the Worker. The built-in rate limiter is best-effort (per isolate, not global) and is not a substitute for proper access control.
-
-## Contributing
-
-Pull requests welcome. Two small conventions:
-
-- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `refactor:` …)
-- Keep the existing JSDoc comment style when touching `.js` files — it's what drives the hover tooltips in editors
-
-Adding a new provider is usually a three-file change:
-
-1. Pick an `apiStyle` in `src/checkers.js` (or add a new one if the provider is exotic)
-2. Add a model-list fetcher in `src/model_fetchers.js` if the provider has a non-standard `/models` endpoint
-3. Register it in `config/providers.json`
+- Vault data (including API keys) is stored **in your D1 database** under each user — protect `JWT_SECRET`, invite codes, and Cloudflare account access.
+- The built-in rate limiter is best-effort per isolate.
+- Keep `ALLOWED_ORIGINS` tight if you expose the Worker cross-origin.
 
 ## License
 
-MIT. See [LICENSE](LICENSE) for the full text.
+MIT.

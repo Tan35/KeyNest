@@ -14,6 +14,7 @@ import {
 } from '@/constants';
 import { parseKeys } from '@/utils/keyParser';
 import { t } from '@/i18n';
+import { getToken } from '@/stores/authToken';
 
 /**
  * @description checker Store 用于管理 API Key 检测的核心逻辑和状态。
@@ -135,7 +136,12 @@ export const useCheckerStore = defineStore('checker', () => {
 
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const host = window.location.host;
-            const ws = new WebSocket(`${protocol}//${host}/check`);
+            const jwt = getToken();
+            if (!jwt) {
+                reject(new Error('Unauthorized'));
+                return;
+            }
+            const ws = new WebSocket(`${protocol}//${host}/check?token=${encodeURIComponent(jwt)}`);
 
             ws.onopen = () => {
                 socket.value = ws;

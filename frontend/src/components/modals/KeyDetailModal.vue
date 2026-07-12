@@ -6,6 +6,7 @@ import { useConfigStore } from '@/stores/config';
 import { fetchModels } from '@/api';
 import { t, currentLang } from '@/i18n';
 import CustomSelect from '@/components/CustomSelect.vue';
+import { getToken } from '@/stores/authToken';
 
 const keyManager   = useKeyManagerStore();
 const uiStore      = useUiStore();
@@ -129,9 +130,11 @@ async function runConnectionTest(modelOverride) {
     };
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
+    const jwt = getToken();
+    if (!jwt) throw new Error(t('authRequired'));
     const startedAt = performance.now();
     const result = await new Promise((resolve, reject) => {
-        const ws = new WebSocket(`${protocol}//${host}/check`);
+        const ws = new WebSocket(`${protocol}//${host}/check?token=${encodeURIComponent(jwt)}`);
         const timeout = setTimeout(() => { ws.close(); reject(new Error(t('kdTestTimeout'))); }, 30000);
         ws.onopen = () => ws.send(JSON.stringify({
             command: 'start',

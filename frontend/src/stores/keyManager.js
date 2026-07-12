@@ -277,13 +277,6 @@ export const useKeyManagerStore = defineStore('keyManager', () => {
      * @param {string|object} jsonStr - 导出 JSON 字符串或对象。
      * @returns {Promise<number>} - 导入数量。
      */
-    async function replaceAllFromImport(jsonStr) {
-        await db.clearAllKeys();
-        const count = await db.importKeys(jsonStr);
-        await loadKeys();
-        return count;
-    }
-
     /**
      * @description 选中一个 Key。
      * @param {string} id - Key ID。
@@ -340,7 +333,6 @@ export const useKeyManagerStore = defineStore('keyManager', () => {
         removeTag,
         exportKeys,
         importKeys,
-        replaceAllFromImport,
         selectKey,
         toggleManager,
         clearFilters,

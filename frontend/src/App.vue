@@ -4,6 +4,7 @@ import { useUiStore } from '@/stores/ui';
 import { useCheckerStore } from '@/stores/checker';
 import { useKeyManagerStore } from '@/stores/keyManager';
 import { useConfigStore } from '@/stores/config';
+import { useAuthStore } from '@/stores/auth';
 import { RESULT_TAB_CONFIG } from '@/constants';
 import { currentLang, setLang, SUPPORTED_LANGS, LANG_LABELS, t } from '@/i18n';
 
@@ -17,6 +18,7 @@ import ResultPanel from './components/ResultPanel.vue';
 import ToastContainer from './components/ToastContainer.vue';
 import ModalContainer from './components/ModalContainer.vue';
 import KeyManager from './components/KeyManager.vue';
+import AuthPage from './components/AuthPage.vue';
 
 /**
  * @description 结果标签页的配置数组。
@@ -27,6 +29,7 @@ const uiStore = useUiStore();
 const checkerStore = useCheckerStore();
 const keyManager = useKeyManagerStore();
 const configStore = useConfigStore();
+const authStore = useAuthStore();
 const scrollPosition = ref(0);
 
 /** 语言切换下拉菜单开关 */
@@ -104,15 +107,48 @@ const handleOutsideClick = (e) => {
 };
 
 /**
- * @description 组件挂载时添加键盘事件监听器并初始化会话。
+ * @description 未授权时踢回登录页。
  */
-onMounted(() => {
+function handleUnauthorized() {
+    authStore.logout();
+    keyManager.keys = [];
+}
+
+/**
+ * @description 退出登录。
+ */
+function handleLogout() {
+    authStore.logout();
+    keyManager.keys = [];
+    keyManager.showManager = false;
+    uiStore.showToast(t('authLoggedOut'), 'info');
+}
+
+/**
+ * @description 组件挂载时鉴权引导并初始化会话。
+ */
+onMounted(async () => {
     uiStore.initTheme();
-    checkerStore.initSession();
-    keyManager.loadKeys();
     document.addEventListener('keydown', handleEscKey);
     document.addEventListener('click', handleOutsideClick);
+    window.addEventListener('keynest:unauthorized', handleUnauthorized);
+
+    const ok = await authStore.bootstrap();
+    if (ok) {
+        checkerStore.initSession();
+        await keyManager.loadKeys();
+    }
 });
+
+watch(
+    () => authStore.isAuthenticated,
+    async (authed, wasAuthed) => {
+        if (authed && !wasAuthed) {
+            checkerStore.initSession();
+            await keyManager.loadKeys();
+        }
+    }
+);
 
 /**
  * @description 组件卸载前移除键盘事件监听器。
@@ -120,6 +156,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
     document.removeEventListener('keydown', handleEscKey);
     document.removeEventListener('click', handleOutsideClick);
+    window.removeEventListener('keynest:unauthorized', handleUnauthorized);
     // 完整恢复 body 样式，防止残留
     const body = document.body;
     body.style.position = '';
@@ -130,7 +167,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="page-wrapper">
+    <div v-if="!authStore.bootstrapped" class="auth-boot">
+        <div class="auth-boot-inner">{{ t('authBooting') }}</div>
+    </div>
+    <AuthPage v-else-if="!authStore.isAuthenticated" />
+    <div v-else class="page-wrapper">
         <header class="topbar">
             <div class="brand-lockup" @click="keyManager.showManager = false" role="button" :title="t('navChecker')" style="cursor:pointer">
                 <span class="brand-mark" aria-hidden="true"></span>
@@ -168,6 +209,11 @@ onBeforeUnmount(() => {
                             {{ LANG_LABELS[lang] }}
                         </button>
                     </div>
+                </div>
+
+                <div v-if="authStore.user" class="user-chip" :title="authStore.user.email">
+                    <span class="user-chip-email">{{ authStore.user.email }}</span>
+                    <button type="button" class="user-logout-btn" @click="handleLogout">{{ t('authLogout') }}</button>
                 </div>
 
                 <!-- 深色模式切换按钮 -->
@@ -271,6 +317,54 @@ onBeforeUnmount(() => {
     /* 防止 Vue 渲染时闪烁未编译内容 */
     [v-cloak] {
         display: none;
+    }
+
+    .auth-boot {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg-paper);
+        color: var(--text-tertiary);
+        font-size: 14px;
+    }
+
+    .user-chip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 220px;
+        height: var(--ctrl-height-md);
+        padding: 0 6px 0 10px;
+        border-radius: var(--radius-md);
+        background: var(--bg-surface);
+        box-shadow: var(--shadow-light-ring);
+    }
+
+    .user-chip-email {
+        font-size: 12px;
+        color: var(--text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    .user-logout-btn {
+        flex-shrink: 0;
+        height: 28px;
+        padding: 0 10px;
+        border: none;
+        border-radius: var(--radius-md);
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 12px;
+        font-family: var(--font-sans);
+        cursor: pointer;
+    }
+
+    .user-logout-btn:hover {
+        background: var(--bg-input);
     }
 
     /* 内容分隔线 */

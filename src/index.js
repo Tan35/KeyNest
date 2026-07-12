@@ -3,12 +3,13 @@ import { handleWebSocketSession } from './websocket_handler.js';
 import * as modelFetcher from './model_fetchers.js';
 import * as providersData from '../config/providers.json';
 import { checkRateLimit } from './utils/rateLimit.js';
-import { handleBackupRequest } from './backup.js';
+import { handleAuthRequest } from './auth.js';
+import { handleVaultRequest } from './vault.js';
+import { getAuthUser } from './utils/authContext.js';
+import { jsonResponse } from './utils/http.js';
 
 /**
  * @description 速率限制配置。
- * WS_RATE: WebSocket 连接频率限制（每个 IP 每分钟最多 10 次连接）。
- * MODELS_RATE: /models 接口频率限制（每个 IP 每分钟最多 30 次请求）。
  */
 const RATE_LIMITS = {
     WS: { maxRequests: 10, windowMs: 60_000 },
@@ -16,8 +17,7 @@ const RATE_LIMITS = {
 };
 
 /**
- * @description Durable Object (DO) 用于从指定的 Cloudflare 区域发起网络请求。
- * 它接收一个内部请求，解析出真正的目标 URL 和参数，然后从该 DO 所在的区域发起 fetch。
+ * @description Durable Object：按区域发起上游请求。
  */
 export class RegionalFetcher {
     constructor(state, env) {
@@ -30,18 +30,12 @@ export class RegionalFetcher {
         const upstreamRequest = new Request(targetUrl, {
             method,
             headers,
-            body: typeof body === 'object' ? JSON.stringify(body) : body
+            body: typeof body === 'object' ? JSON.stringify(body) : body,
         });
         return fetch(upstreamRequest);
     }
 }
 
-/**
- * @description 处理 /models API 请求，用于获取指定提供商的可用模型列表。
- * @param {Request} request - 传入的请求对象。
- * @param {object} env - Cloudflare Worker 的环境变量。
- * @returns {Promise<Response>} - 包含模型列表或错误信息的响应。
- */
 async function handleModelsRequest(request, env) {
     if (request.method !== 'POST') {
         return new Response('Method Not Allowed', { status: 405 });
@@ -79,22 +73,14 @@ async function handleModelsRequest(request, env) {
     }
 }
 
-/**
- * @description 获取客户端 IP 地址，优先使用 Cloudflare 提供的 CF-Connecting-IP。
- * @param {Request} request - 传入的请求对象。
- * @returns {string} - 客户端 IP 地址。
- */
 function getClientIP(request) {
-    return request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() || 'unknown';
+    return (
+        request.headers.get('CF-Connecting-IP') ||
+        request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
+        'unknown'
+    );
 }
 
-/**
- * @description 创建速率限制超限的响应。
- * @param {number} retryAfterMs - 建议客户端重试的等待时间（毫秒）。
- * @param {Request} request - 传入的请求对象。
- * @param {object} env - 环境变量。
- * @returns {Response} - 429 响应。
- */
 function rateLimitResponse(retryAfterMs, request, env) {
     const headers = corsHeaders(request, env);
     headers['Retry-After'] = String(Math.ceil(retryAfterMs / 1000));
@@ -106,27 +92,45 @@ function rateLimitResponse(retryAfterMs, request, env) {
 }
 
 /**
- * @description Cloudflare Worker 的主入口点。
- * 它处理所有传入的 HTTP 请求，并根据路径路由到不同的处理器。
+ * @description 业务接口鉴权；未登录返回 401 JSON。
  */
+async function requireAuth(request, env) {
+    const user = await getAuthUser(request, env);
+    if (!user) {
+        return { user: null, error: jsonResponse(401, { error: 'Unauthorized' }, request, env) };
+    }
+    return { user, error: null };
+}
+
 export default {
     async fetch(request, env, ctx) {
         const url = new URL(request.url);
         const pathname = url.pathname;
 
-        // 处理 CORS 预检请求
         if (request.method === 'OPTIONS') {
             return handleOptions(request, env);
         }
 
-        // /check 路径用于 WebSocket 连接，处理实时检测任务
+        // 认证
+        if (pathname.startsWith('/api/auth')) {
+            return handleAuthRequest(request, env, pathname);
+        }
+
+        // 用户 vault（需登录）
+        if (pathname.startsWith('/api/keys')) {
+            return handleVaultRequest(request, env, pathname);
+        }
+
+        // WebSocket 检测（需登录，token 走 query）
         if (pathname === '/check') {
             const upgradeHeader = request.headers.get('Upgrade');
             if (upgradeHeader !== 'websocket') {
                 return new Response('Expected a WebSocket upgrade request', { status: 426 });
             }
 
-            // WebSocket 连接速率限制
+            const { error } = await requireAuth(request, env);
+            if (error) return error;
+
             const clientIP = getClientIP(request);
             const wsLimit = checkRateLimit(`ws:${clientIP}`, RATE_LIMITS.WS.maxRequests, RATE_LIMITS.WS.windowMs);
             if (!wsLimit.allowed) {
@@ -134,13 +138,9 @@ export default {
             }
 
             const [client, server] = Object.values(new WebSocketPair());
-            
-            // 将 WebSocket 会话处理委托给 handler，并确保 Worker 在会话期间保持活动状态
             ctx.waitUntil(handleWebSocketSession(server, env));
 
             const responseHeaders = corsHeaders(request, env);
-
-            // 返回 101 响应，升级连接到 WebSocket
             return new Response(null, {
                 status: 101,
                 webSocket: client,
@@ -148,27 +148,28 @@ export default {
             });
         }
 
-        // /models 路径用于获取模型列表
+        // 模型列表（需登录）
         if (pathname === '/models') {
-            // /models 接口速率限制
+            const { error } = await requireAuth(request, env);
+            if (error) return error;
+
             const clientIP = getClientIP(request);
-            const modelsLimit = checkRateLimit(`models:${clientIP}`, RATE_LIMITS.MODELS.maxRequests, RATE_LIMITS.MODELS.windowMs);
+            const modelsLimit = checkRateLimit(
+                `models:${clientIP}`,
+                RATE_LIMITS.MODELS.maxRequests,
+                RATE_LIMITS.MODELS.windowMs
+            );
             if (!modelsLimit.allowed) {
                 return rateLimitResponse(modelsLimit.retryAfterMs, request, env);
             }
             return handleModelsRequest(request, env);
         }
 
-        // /api/backup：Key 保险箱云备份（Backup Token 鉴权，数据存 KV）
-        if (pathname === '/api/backup') {
-            return handleBackupRequest(request, env);
-        }
-
-        // 默认情况下，尝试提供静态资源（前端应用）
+        // 静态资源（登录页需要未鉴权可访问）
         try {
             return await env.ASSETS.fetch(request);
         } catch (e) {
-            return new Response("静态资源服务配置错误，请检查 wrangler.toml。", { status: 500 });
+            return new Response('静态资源服务配置错误，请检查 wrangler.toml。', { status: 500 });
         }
     },
 };

@@ -6,17 +6,6 @@ import { useConfigStore } from '@/stores/config';
 import KeyCard from './KeyCard.vue';
 import CustomSelect from './CustomSelect.vue';
 import { t, currentLang } from '@/i18n';
-import {
-    BACKUP_TOKEN_MIN_LENGTH,
-    generateBackupToken,
-    uploadCloudBackup,
-    downloadCloudBackup,
-    fetchCloudBackupMeta,
-    deleteCloudBackup,
-} from '@/api';
-
-const BACKUP_TOKEN_STORAGE_KEY = 'keynest_backup_token';
-const BACKUP_META_STORAGE_KEY = 'keynest_backup_meta';
 
 const keyManager   = useKeyManagerStore();
 const uiStore      = useUiStore();
@@ -33,11 +22,6 @@ const selectedIds    = ref(new Set());
 const selectAll      = ref(false);
 const showImportExport = ref(false);
 const importText     = ref('');
-const showCloudBackup = ref(false);
-const backupToken = ref('');
-const showBackupToken = ref(false);
-const backupBusy = ref(false);
-const cloudMeta = ref(null);
 
 watch(newKeyProvider, (val) => {
     const p = configStore.providers[val];
@@ -88,198 +72,7 @@ const sortOptionsForSelect = computed(() => {
     ];
 });
 
-onMounted(() => {
-    keyManager.loadKeys();
-    try {
-        backupToken.value = localStorage.getItem(BACKUP_TOKEN_STORAGE_KEY) || '';
-        const rawMeta = localStorage.getItem(BACKUP_META_STORAGE_KEY);
-        if (rawMeta) cloudMeta.value = JSON.parse(rawMeta);
-    } catch { /* ignore */ }
-});
-
-function persistBackupToken() {
-    try {
-        const token = backupToken.value.trim();
-        if (token) localStorage.setItem(BACKUP_TOKEN_STORAGE_KEY, token);
-        else localStorage.removeItem(BACKUP_TOKEN_STORAGE_KEY);
-    } catch { /* ignore */ }
-}
-
-function persistCloudMeta(meta) {
-    cloudMeta.value = meta;
-    try {
-        if (meta) localStorage.setItem(BACKUP_META_STORAGE_KEY, JSON.stringify(meta));
-        else localStorage.removeItem(BACKUP_META_STORAGE_KEY);
-    } catch { /* ignore */ }
-}
-
-function openCloudBackupPanel() {
-    showCloudBackup.value = !showCloudBackup.value;
-    if (showCloudBackup.value) showImportExport.value = false;
-}
-
-function openImportExportPanel() {
-    showImportExport.value = !showImportExport.value;
-    if (showImportExport.value) showCloudBackup.value = false;
-}
-
-function handleGenerateToken() {
-    backupToken.value = generateBackupToken();
-    persistBackupToken();
-    uiStore.showToast(t('toastBackupTokenGenerated'), 'success');
-}
-
-async function handleCopyToken() {
-    const token = backupToken.value.trim();
-    if (!token) {
-        uiStore.showToast(t('toastBackupTokenRequired'), 'warning');
-        return;
-    }
-    try {
-        await navigator.clipboard.writeText(token);
-        uiStore.showToast(t('toastBackupTokenCopied'), 'success');
-    } catch {
-        uiStore.showToast(t('toastManualCopy'), 'info');
-    }
-}
-
-function ensureBackupToken() {
-    const token = backupToken.value.trim();
-    if (!token) {
-        uiStore.showToast(t('toastBackupTokenRequired'), 'warning');
-        return null;
-    }
-    if (token.length < BACKUP_TOKEN_MIN_LENGTH) {
-        uiStore.showToast(t('toastBackupTokenTooShort', { min: BACKUP_TOKEN_MIN_LENGTH }), 'warning');
-        return null;
-    }
-    persistBackupToken();
-    return token;
-}
-
-async function handleCloudBackup() {
-    const token = ensureBackupToken();
-    if (!token || backupBusy.value) return;
-    if (keyManager.keys.length === 0) {
-        uiStore.showToast(t('toastBackupEmpty'), 'warning');
-        return;
-    }
-
-    backupBusy.value = true;
-    try {
-        const json = await keyManager.exportKeys();
-        const result = await uploadCloudBackup(token, json);
-        persistCloudMeta({
-            updatedAt: result.updatedAt,
-            keyCount: result.keyCount,
-        });
-        uiStore.showToast(t('toastBackupUploaded', { count: result.keyCount }), 'success');
-    } catch (err) {
-        uiStore.showToast(t('toastBackupFailed', { msg: err.message || '' }), 'error');
-    } finally {
-        backupBusy.value = false;
-    }
-}
-
-async function handleCloudRestore(mode) {
-    const token = ensureBackupToken();
-    if (!token || backupBusy.value) return;
-
-    if (mode === 'replace' && keyManager.keys.length > 0) {
-        const confirmed = await uiStore.showConfirmation(t('confirmBackupReplace'));
-        if (!confirmed) return;
-    }
-
-    backupBusy.value = true;
-    try {
-        const result = await downloadCloudBackup(token);
-        const payload = result.data;
-        if (!payload || (!Array.isArray(payload.keys) && !Array.isArray(payload))) {
-            throw new Error(t('toastBackupInvalid'));
-        }
-
-        let count;
-        if (mode === 'replace') {
-            count = await keyManager.replaceAllFromImport(payload);
-        } else {
-            count = await keyManager.importKeys(JSON.stringify(payload));
-        }
-
-        persistCloudMeta({
-            updatedAt: result.updatedAt,
-            keyCount: result.keyCount,
-        });
-
-        if (count === 0 && mode === 'merge') {
-            uiStore.showToast(t('toastBackupNoNewKeys'), 'info');
-        } else {
-            uiStore.showToast(
-                mode === 'replace'
-                    ? t('toastBackupRestoredReplace', { count })
-                    : t('toastBackupRestoredMerge', { count }),
-                'success'
-            );
-        }
-    } catch (err) {
-        uiStore.showToast(t('toastBackupFailed', { msg: err.message || '' }), 'error');
-    } finally {
-        backupBusy.value = false;
-    }
-}
-
-async function handleCheckCloudMeta() {
-    const token = ensureBackupToken();
-    if (!token || backupBusy.value) return;
-
-    backupBusy.value = true;
-    try {
-        const meta = await fetchCloudBackupMeta(token);
-        persistCloudMeta({
-            updatedAt: meta.updatedAt,
-            keyCount: meta.keyCount,
-        });
-        uiStore.showToast(
-            t('toastBackupMeta', {
-                count: meta.keyCount ?? 0,
-                time: meta.updatedAt ? new Date(meta.updatedAt).toLocaleString() : '—',
-            }),
-            'info'
-        );
-    } catch (err) {
-        uiStore.showToast(t('toastBackupFailed', { msg: err.message || '' }), 'error');
-    } finally {
-        backupBusy.value = false;
-    }
-}
-
-async function handleDeleteCloudBackup() {
-    const token = ensureBackupToken();
-    if (!token || backupBusy.value) return;
-
-    const confirmed = await uiStore.showConfirmation(t('confirmBackupDelete'));
-    if (!confirmed) return;
-
-    backupBusy.value = true;
-    try {
-        await deleteCloudBackup(token);
-        persistCloudMeta(null);
-        uiStore.showToast(t('toastBackupDeleted'), 'success');
-    } catch (err) {
-        uiStore.showToast(t('toastBackupFailed', { msg: err.message || '' }), 'error');
-    } finally {
-        backupBusy.value = false;
-    }
-}
-
-const cloudMetaText = computed(() => {
-    void currentLang.value;
-    if (!cloudMeta.value?.updatedAt) return '';
-    const time = new Date(cloudMeta.value.updatedAt).toLocaleString();
-    return t('cloudBackupMetaLine', {
-        count: cloudMeta.value.keyCount ?? 0,
-        time,
-    });
-});
+onMounted(() => { keyManager.loadKeys(); });
 
 async function handleAddKey() {
     const token = newKeyText.value.trim();
@@ -391,7 +184,7 @@ watch(() => keyManager.filteredKeys.length, () => {
 <template>
     <div class="key-manager">
 
-        <!-- ── Toolbar ── -->
+        <!-- 鈹€鈹€ Toolbar 鈹€鈹€ -->
         <div class="km-toolbar">
             <div class="km-toolbar-left">
                 <button @click="openAddModal" class="km-btn primary">
@@ -400,17 +193,14 @@ watch(() => keyManager.filteredKeys.length, () => {
                     </svg>
                     {{ t('btnAddKey') }}
                 </button>
-                <button @click="openImportExportPanel" class="km-btn">
+                <button @click="showImportExport = !showImportExport" class="km-btn">
                     {{ t('btnImportExport') }}
-                </button>
-                <button @click="openCloudBackupPanel" class="km-btn">
-                    {{ t('btnCloudBackup') }}
                 </button>
             </div>
             <span class="km-count">{{ t('kmCount', { filtered: keyManager.filteredKeys.length, total: keyManager.keys.length }) }}</span>
         </div>
 
-        <!-- ── Filter bar ── -->
+        <!-- 鈹€鈹€ Filter bar 鈹€鈹€ -->
         <div class="km-filters">
             <div class="km-search-wrap">
                 <svg class="km-search-icon" width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -456,7 +246,7 @@ watch(() => keyManager.filteredKeys.length, () => {
             </div>
         </div>
 
-        <!-- ── Batch action bar ── -->
+        <!-- 鈹€鈹€ Batch action bar 鈹€鈹€ -->
         <div v-if="selectedIds.size > 0" class="km-batch-bar">
             <label class="km-check-label">
                 <input type="checkbox" :checked="selectAll" @change="toggleSelectAll" />
@@ -466,7 +256,7 @@ watch(() => keyManager.filteredKeys.length, () => {
             <button @click="handleBatchDelete" class="km-btn danger km-btn-sm">{{ t('btnBatchDelete') }}</button>
         </div>
 
-        <!-- ── Import/Export panel ── -->
+        <!-- 鈹€鈹€ Import/Export panel 鈹€鈹€ -->
         <div v-if="showImportExport" class="km-ie-panel">
             <div class="km-ie-header">
                 <span class="km-ie-title">{{ t('ieTitle') }}</span>
@@ -492,74 +282,7 @@ watch(() => keyManager.filteredKeys.length, () => {
             </div>
         </div>
 
-        <!-- ── Cloud backup panel ── -->
-        <div v-if="showCloudBackup" class="km-ie-panel km-cloud-panel">
-            <div class="km-ie-header">
-                <span class="km-ie-title">{{ t('cloudBackupTitle') }}</span>
-                <button @click="showCloudBackup = false" class="km-btn km-btn-sm">{{ t('btnClose') }}</button>
-            </div>
-            <p class="km-cloud-hint">{{ t('cloudBackupHint') }}</p>
-            <div class="km-form-group">
-                <label>{{ t('labelBackupToken') }}</label>
-                <div class="km-token-row">
-                    <input
-                        v-model="backupToken"
-                        :type="showBackupToken ? 'text' : 'password'"
-                        class="km-input km-token-input"
-                        :placeholder="t('placeholderBackupToken')"
-                        autocomplete="off"
-                        spellcheck="false"
-                        @change="persistBackupToken"
-                        @blur="persistBackupToken"
-                    />
-                    <button
-                        type="button"
-                        class="km-btn km-btn-sm"
-                        @click="showBackupToken = !showBackupToken"
-                    >{{ showBackupToken ? t('btnHideToken') : t('btnShowToken') }}</button>
-                </div>
-            </div>
-            <div class="km-ie-actions km-cloud-actions">
-                <button type="button" class="km-btn km-btn-sm" :disabled="backupBusy" @click="handleGenerateToken">
-                    {{ t('btnGenerateToken') }}
-                </button>
-                <button type="button" class="km-btn km-btn-sm" :disabled="backupBusy" @click="handleCopyToken">
-                    {{ t('btnCopyToken') }}
-                </button>
-                <button type="button" class="km-btn km-btn-sm" :disabled="backupBusy" @click="handleCheckCloudMeta">
-                    {{ t('btnCheckBackup') }}
-                </button>
-            </div>
-            <p v-if="cloudMetaText" class="km-cloud-meta">{{ cloudMetaText }}</p>
-            <div class="km-ie-actions km-cloud-actions">
-                <button
-                    type="button"
-                    class="km-btn primary km-btn-sm"
-                    :disabled="backupBusy"
-                    @click="handleCloudBackup"
-                >{{ backupBusy ? t('btnBackupWorking') : t('btnBackupUpload') }}</button>
-                <button
-                    type="button"
-                    class="km-btn km-btn-sm"
-                    :disabled="backupBusy"
-                    @click="handleCloudRestore('merge')"
-                >{{ t('btnBackupRestoreMerge') }}</button>
-                <button
-                    type="button"
-                    class="km-btn km-btn-sm"
-                    :disabled="backupBusy"
-                    @click="handleCloudRestore('replace')"
-                >{{ t('btnBackupRestoreReplace') }}</button>
-                <button
-                    type="button"
-                    class="km-btn danger km-btn-sm"
-                    :disabled="backupBusy"
-                    @click="handleDeleteCloudBackup"
-                >{{ t('btnBackupDelete') }}</button>
-            </div>
-        </div>
-
-        <!-- ── Key list ── -->
+        <!-- 鈹€鈹€ Key list 鈹€鈹€ -->
         <div class="km-key-list" v-if="keyManager.keys.length > 0">
             <div class="km-key-list-inner">
                 <label class="km-check-label km-check-all" v-if="keyManager.filteredKeys.length > 0">
@@ -588,7 +311,7 @@ watch(() => keyManager.filteredKeys.length, () => {
             </div>
         </div>
 
-        <!-- ── Empty state ── -->
+        <!-- 鈹€鈹€ Empty state 鈹€鈹€ -->
         <div v-else class="km-empty">
             <svg class="km-empty-icon" width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.25">
                 <rect x="6" y="10" width="28" height="22" rx="3"/>
@@ -607,7 +330,7 @@ watch(() => keyManager.filteredKeys.length, () => {
 
     </div>
 
-    <!-- ── Add Key Modal ── -->
+    <!-- 鈹€鈹€ Add Key Modal 鈹€鈹€ -->
     <Teleport to="body">
         <div v-if="addModalOpen" class="km-overlay" @click.self="addModalOpen = false">
             <div class="km-modal">
@@ -663,7 +386,7 @@ watch(() => keyManager.filteredKeys.length, () => {
 </template>
 
 <style scoped>
-/* ── Layout ── */
+/* 鈹€鈹€ Layout 鈹€鈹€ */
 .key-manager {
     padding: 16px;
     height: 100%;
@@ -672,7 +395,7 @@ watch(() => keyManager.filteredKeys.length, () => {
     gap: 10px;
 }
 
-/* ── Toolbar ── */
+/* 鈹€鈹€ Toolbar 鈹€鈹€ */
 .km-toolbar {
     display: flex;
     justify-content: space-between;
@@ -687,7 +410,7 @@ watch(() => keyManager.filteredKeys.length, () => {
     font-variant-numeric: tabular-nums;
 }
 
-/* ── Unified button — same height as global inputs (--ctrl-height-md = 36px) ── */
+/* 鈹€鈹€ Unified button 鈥?same height as global inputs (--ctrl-height-md = 36px) 鈹€鈹€ */
 .km-btn {
     height: var(--ctrl-height-md);
     padding: 0 14px;
@@ -706,14 +429,13 @@ watch(() => keyManager.filteredKeys.length, () => {
     transition: background var(--transition-fast), box-shadow var(--transition-fast);
 }
 .km-btn:hover { background: var(--bg-secondary); }
-.km-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .km-btn.primary { background: var(--ds-gray-1000); color: var(--ds-white); box-shadow: none; }
 .km-btn.primary:hover { background: var(--ds-black); color: var(--ds-white); }
 .km-btn.danger  { background: var(--ds-red); color: #ffffff; box-shadow: none; }
 .km-btn.danger:hover  { background: var(--ds-red-dark); color: #ffffff; }
 .km-btn-sm { height: var(--ctrl-height-sm); padding: 0 10px; font-size: var(--ctrl-font-sm); }
 
-/* ── Filter bar ── */
+/* 鈹€鈹€ Filter bar 鈹€鈹€ */
 .km-filters {
     display: flex;
     gap: 8px;
@@ -790,7 +512,7 @@ watch(() => keyManager.filteredKeys.length, () => {
     flex-shrink: 0;
 }
 
-/* ── Custom checkbox ── */
+/* 鈹€鈹€ Custom checkbox 鈹€鈹€ */
 .km-check-label input[type="checkbox"],
 .km-key-checkbox {
     appearance: none;
@@ -830,7 +552,7 @@ watch(() => keyManager.filteredKeys.length, () => {
     transform: rotate(45deg);
 }
 
-/* ── Batch bar ── */
+/* 鈹€鈹€ Batch bar 鈹€鈹€ */
 .km-batch-bar {
     display: flex;
     align-items: center;
@@ -856,7 +578,7 @@ watch(() => keyManager.filteredKeys.length, () => {
     font-weight: 600;
 }
 
-/* ── Import/Export panel ── */
+/* 鈹€鈹€ Import/Export panel 鈹€鈹€ */
 .km-ie-panel {
     padding: 14px;
     background: var(--bg-secondary);
@@ -884,33 +606,9 @@ watch(() => keyManager.filteredKeys.length, () => {
     color: var(--text-primary);
 }
 .km-ie-textarea:focus { outline: none; box-shadow: var(--shadow-ring); }
-.km-ie-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.km-ie-provider { margin-bottom: 8px; }
-.km-cloud-hint {
-    margin: 0 0 12px;
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--text-tertiary);
-}
-.km-cloud-meta {
-    margin: 8px 0 0;
-    font-size: 12px;
-    color: var(--text-secondary);
-}
-.km-token-row {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-}
-.km-token-input {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-mono);
-    font-size: 12px;
-}
-.km-cloud-actions { margin-top: 10px; }
+.km-ie-actions { display: flex; gap: 6px; }
 
-/* ── Key list ── */
+/* 鈹€鈹€ Key list 鈹€鈹€ */
 .km-key-list {
     flex: 1;
     overflow: hidden;
@@ -929,7 +627,7 @@ watch(() => keyManager.filteredKeys.length, () => {
 .km-key-checkbox { margin-top: 14px; }
 .km-key-card-wrapper { flex: 1; min-width: 0; }
 
-/* ── Empty state ── */
+/* 鈹€鈹€ Empty state 鈹€鈹€ */
 .km-empty {
     flex: 1;
     display: flex;
@@ -962,7 +660,7 @@ watch(() => keyManager.filteredKeys.length, () => {
 }
 .km-empty-cta:hover { background: var(--ds-black); color: var(--ds-white); }
 
-/* ── Modal overlay ── */
+/* 鈹€鈹€ Modal overlay 鈹€鈹€ */
 .km-overlay {
     position: fixed;
     inset: 0;
@@ -1011,7 +709,7 @@ watch(() => keyManager.filteredKeys.length, () => {
     box-shadow: inset 0 1px 0 0 var(--border-color);
 }
 
-/* ── Form ── */
+/* 鈹€鈹€ Form 鈹€鈹€ */
 .km-form-group {
     margin-bottom: 14px;
     display: flex;
