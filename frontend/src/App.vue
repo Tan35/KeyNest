@@ -392,10 +392,10 @@ onBeforeUnmount(() => {
         flex-shrink: 0;
     }
 
-    /* 桌面：轻量触发器，避免「外层长框 + 内层圆框」双重框感 */
+    /* 桌面：轻量触发器；头像与邮箱同轴垂直居中 */
     .user-menu-trigger {
         display: inline-flex;
-        align-items: center;
+        align-items: center; /* 交叉轴居中：头像圆与邮箱文字光学对齐 */
         gap: 8px;
         max-width: min(220px, 32vw);
         height: 32px;
@@ -407,6 +407,7 @@ onBeforeUnmount(() => {
         cursor: pointer;
         color: inherit;
         font: inherit;
+        line-height: 1; /* 避免 button 默认行高把文字顶偏 */
         min-width: 0;
         transition: background var(--transition-fast);
     }
@@ -417,6 +418,10 @@ onBeforeUnmount(() => {
 
     .user-chip-email {
         font-size: 12px;
+        line-height: 1;
+        height: 24px; /* 与头像 24px 同高，便于垂直居中 */
+        display: inline-flex;
+        align-items: center;
         color: var(--text-secondary);
         overflow: hidden;
         text-overflow: ellipsis;

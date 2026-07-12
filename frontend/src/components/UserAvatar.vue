@@ -80,16 +80,20 @@ watch(() => props.seed, (seed) => { renderAvatar(seed); }, { immediate: true });
     display: block;
     border-radius: 9999px; /* 仅裁成圆形，不加描边/外环 */
     object-fit: cover;
-    object-position: center 15%;
+    object-position: center 18%;
     flex-shrink: 0;
+    /* 消除 img 作为替换元素时的基线空隙，避免 flex 里和文字对不齐 */
+    vertical-align: middle;
+    line-height: 0;
     background: var(--bg-secondary);
     user-select: none;
     -webkit-user-drag: none;
 }
 
 .user-avatar-fallback {
-    display: inline-block;
+    display: block;
     border-radius: 9999px;
+    flex-shrink: 0;
     background: var(--bg-secondary);
 }
 </style>
